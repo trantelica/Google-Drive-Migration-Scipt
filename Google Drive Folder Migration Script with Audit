@@ -91,15 +91,23 @@ function migrateSingleFile(item, engagementFolderId, destParentId) {
       
       let targetPath = item.newPath;
       
-      // Strip filename from the path if the Gem accidentally included it
+      // FIX 1: Strip filename from the path if the Gem accidentally included it
       if (targetPath.endsWith("/" + item.name) || targetPath.endsWith(item.name)) {
         targetPath = targetPath.substring(0, targetPath.lastIndexOf('/'));
       }
 
-      // Check for shared status to log it silently (No path alteration)
+      // FIX 2: The "Smart Root" Collision Check (Prevents Double-Nesting)
+      // If the first folder in the JSON path matches the name of the destination root, strip it.
+      let pathParts = targetPath.split('/').filter(p => p.trim() !== ''); // Filter out empty strings
+      if (pathParts.length > 0 && pathParts[0] === root.getName()) {
+        pathParts.shift(); // Slices off the duplicate root name
+      }
+      targetPath = pathParts.join('/');
+
       const isShared = (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0);
       
-      const destFolder = navigateToPath(root, targetPath);
+      // If targetPath is empty after trimming, drop it in the root. Otherwise, build the path.
+      const destFolder = targetPath ? navigateToPath(root, targetPath) : root;
       destFolder.addFile(file);
       
       const postSize = file.getSize();
