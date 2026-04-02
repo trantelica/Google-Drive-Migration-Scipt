@@ -1,5 +1,5 @@
 /**
- * UNIFIED MIGRATION FRAMEWORK (v6.6 - Architect Edition)
+ * UNIFIED MIGRATION FRAMEWORK (v6.6 - Dashboard Edition)
  */
 
 const CONFIG = { 
@@ -12,7 +12,7 @@ function doGet() {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/** * PHASE 1: INITIALIZE ENGAGEMENT */
+/** PHASE 1: INITIALIZE ENGAGEMENT */
 function initializeEngagement(projectName, targetFolderId, destParentId) {
   try {
     const cleanTargetId = extractId(targetFolderId);
@@ -21,12 +21,10 @@ function initializeEngagement(projectName, targetFolderId, destParentId) {
     const date = new Date().toISOString().split('T')[0];
     const engagementName = `${date} - ${projectName}`;
     
-    // Setup Directory Structure
     const destParent = cleanDestId === "root" ? DriveApp.getRootFolder() : DriveApp.getFolderById(cleanDestId);
     const logsSubRoot = getOrCreateFolder(destParent, CONFIG.logsSubName);
     const engagementFolder = getOrCreateFolder(logsSubRoot, engagementName);
     
-    // Phase 1.1: Pre-Game Discovery Snapshot
     const target = DriveApp.getFolderById(cleanTargetId);
     let csvHeader = "File ID,Name,Original_Path,Size_Bytes\n";
     let csvData = "";
@@ -52,14 +50,12 @@ function initializeEngagement(projectName, targetFolderId, destParentId) {
       destParentId: destParent.getId(),
       name: engagementName,
       fileCount: csvData.split('\n').length - 1,
-      status: "✅ Engagement Initialized. Pre-Game Snapshot Created."
+      status: "✅ Engagement Initialized."
     };
-  } catch (e) {
-    return "❌ Initialization Error: " + e.message;
-  }
+  } catch (e) { return "❌ Init Error: " + e.message; }
 }
 
-/** * RESUMABILITY: FETCH PROCESSED IDs */
+/** RESUMABILITY: FETCH PROCESSED IDs */
 function getProcessedIds(engagementFolderId) {
   try {
     const folder = DriveApp.getFolderById(engagementFolderId);
@@ -67,17 +63,11 @@ function getProcessedIds(engagementFolderId) {
     if (!files.hasNext()) return [];
     
     const content = files.next().getBlob().getDataAsString();
-    const rows = content.split('\n');
-    const processed = [];
-    rows.forEach(row => {
-      const cols = row.split(',');
-      if (cols[3] === "SUCCESS") processed.push(cols[2]); // Index 2 is ID, Index 3 is Status
-    });
-    return processed;
+    return content.split('\n').map(row => row.split(',')[2]); // Return Column 3 (ID)
   } catch (e) { return []; }
 }
 
-/** * PHASE 3.3: MIGRATION & QC */
+/** PHASE 3: MIGRATION & QC */
 function migrateSingleFile(item, engagementFolderId, destParentId) {
   try {
     const engagementFolder = DriveApp.getFolderById(engagementFolderId);
@@ -85,14 +75,12 @@ function migrateSingleFile(item, engagementFolderId, destParentId) {
     const file = DriveApp.getFileById(item.id);
     const preSize = file.getSize();
 
-    // Metadata Stamp
     file.setDescription(`--- MIGRATION LOG ---\nOriginal Path: ${item.origin}\nSize: ${preSize} bytes\nMigrated: ${new Date().toISOString()}`);
 
-    // Shared File Routing
     let targetPath = item.newPath;
     if (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0) {
       const parts = targetPath.split('/');
-      parts[0] = parts[0].includes('-S') ? parts[0] : parts[0] + " -X";
+      parts[0] = parts[0].includes('-X') ? parts[0] : parts[0] + " -X";
       targetPath = parts.join('/') + "/-X";
     }
 
@@ -103,29 +91,29 @@ function migrateSingleFile(item, engagementFolderId, destParentId) {
     const status = (preSize === postSize) ? "SUCCESS" : "SIZE_MISMATCH";
 
     logAction(engagementFolder, { name: item.name, id: item.id, status: status, target: targetPath, preSize: preSize, postSize: postSize });
-
     return { status: status, name: item.name };
-  } catch (e) {
-    return { status: "FAILED", name: item.name, message: e.message };
-  }
+  } catch (e) { return { status: "FAILED", name: item.name }; }
 }
 
-/** * PHASE 4.0: CLOSE & REPORT */
+/** PHASE 4: CLOSE & REPORT */
 function finalizeEngagement(engagementFolderId) {
   const folder = DriveApp.getFolderById(engagementFolderId);
   const logFile = folder.getFilesByName("execution_action_log.csv").next();
-  const logData = logFile.getBlob().getDataAsString().split('\n');
+  const logData = logFile.getBlob().getDataAsString();
   
-  let stats = { SUCCESS: 0, FAILED: 0, SIZE_MISMATCH: 0 };
-  logData.forEach(row => {
-    if (row.includes("SUCCESS")) stats.SUCCESS++;
-    if (row.includes("FAILED")) stats.FAILED++;
-    if (row.includes("SIZE_MISMATCH")) stats.SIZE_MISMATCH++;
-  });
-
-  const report = `ENGAGEMENT CLOSURE REPORT\nGenerated: ${new Date().toLocaleString()}\n---------------------------\nSuccess: ${stats.SUCCESS}\nMismatch: ${stats.SIZE_MISMATCH}\nFailed: ${stats.FAILED}`;
+  const report = `ENGAGEMENT CLOSURE REPORT\nGenerated: ${new Date().toLocaleString()}\n---------------------------\n${logData}`;
   folder.createFile("reconciliation_summary.txt", report);
-  return "✅ Project Closed. Report deposited.";
+  return "✅ Project Closed. QC Report deposited in logs-sub.";
+}
+
+/** PHASE 5: SOURCE DECOMMISSIONING */
+function decommissionSource(engagementFolderId, targetFolderId) {
+  try {
+    const targetFolder = DriveApp.getFolderById(extractId(targetFolderId));
+    unlinkSource(targetFolder);
+    targetFolder.setTrashed(true);
+    return `✅ Source folder trashed successfully.`;
+  } catch (e) { return "❌ Error: " + e.message; }
 }
 
 // HELPERS
@@ -149,4 +137,11 @@ function getOrCreateFolder(parent, name) {
 
 function navigateToPath(root, path) {
   return path.split('/').reduce((p, n) => getOrCreateFolder(p, n), root);
+}
+
+function unlinkSource(folder) {
+  const files = folder.getFiles();
+  while (files.hasNext()) { folder.removeFile(files.next()); }
+  const subs = folder.getFolders();
+  while (subs.hasNext()) { unlinkSource(subs.next()); }
 }
