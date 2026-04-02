@@ -3,62 +3,73 @@
 <head>
   <base target="_top">
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 30px; background: #f4f7f6; color: #333; line-height: 1.5; }
-    .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; border-left: 5px solid #1a73e8; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background: #f0f2f5; color: #1c1e21; line-height: 1.6; }
+    .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; border-left: 6px solid #1a73e8; }
     
-    /* DYNAMIC STEPPER */
-    .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-    .step { text-align: center; flex: 1; position: relative; color: #ccc; font-size: 11px; font-weight: bold; }
+    /* DASHBOARD STEPPER */
+    .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .step { text-align: center; flex: 1; position: relative; color: #bcc0c4; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
     .step.active { color: #1a73e8; }
     .step.complete { color: #34a853; }
-    .step-icon { width: 28px; height: 28px; line-height: 28px; border-radius: 50%; border: 2px solid #ccc; margin: 0 auto 5px; background: white; transition: 0.3s; }
-    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; transform: scale(1.1); }
+    .step-icon { width: 28px; height: 28px; line-height: 28px; border-radius: 50%; border: 2px solid #bcc0c4; margin: 0 auto 8px; background: white; transition: all 0.3s ease; }
+    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; transform: scale(1.1); box-shadow: 0 0 10px rgba(26,115,232,0.2); }
     .step.complete .step-icon { border-color: #34a853; background: #e6f4ea; }
 
-    h2 { color: #1a73e8; margin-bottom: 15px; font-size: 18px; }
-    label { font-size: 12px; font-weight: bold; color: #666; display: block; margin-bottom: 5px; }
-    input, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; }
-    .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; margin-right: 8px; }
+    h2 { color: #1a73e8; margin-bottom: 20px; font-size: 20px; font-weight: 600; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+    label { font-size: 12px; font-weight: 700; color: #4b4f56; display: block; margin-bottom: 6px; }
+    input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; font-size: 14px; }
+    input:focus, textarea:focus { border-color: #1a73e8; outline: none; box-shadow: 0 0 0 2px rgba(26,115,232,0.1); }
+    
+    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.2s; margin-right: 10px; font-size: 14px; }
     .btn-primary { background: #1a73e8; color: white; }
+    .btn-primary:hover { background: #155db1; }
+    .btn-primary:disabled { background: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
+    .btn-secondary { background: #f0f2f5; color: #1c1e21; }
+    .btn-secondary:hover { background: #e4e6eb; }
     .btn-danger { background: #d93025; color: white; }
-    .btn-disabled { background: #eee; color: #999; cursor: not-allowed; }
-    #log { height: 180px; overflow-y: auto; background: #1e1e1e; color: #4af626; padding: 15px; font-family: 'Consolas', monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; }
+    
+    #log { height: 220px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: 'Courier New', Courier, monospace; font-size: 13px; border-radius: 10px; border: 1px solid #333; }
+    #log div { margin-bottom: 4px; border-bottom: 1px solid #2d2f31; padding-bottom: 2px; }
   </style>
 </head>
 <body>
 
   <div class="stepper" id="stepper">
     <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
-    <div class="step" id="s2"><div class="step-icon">2</div>DESIGN</div>
-    <div class="step" id="s3"><div class="step-icon">3</div>MOVE</div>
+    <div class="step" id="s2"><div class="step-icon">2</div>ANALYZE</div>
+    <div class="step" id="s3"><div class="step-icon">3</div>EXECUTE</div>
     <div class="step" id="s4"><div class="step-icon">4</div>QC</div>
     <div class="step" id="s5"><div class="step-icon">5</div>CLEANUP</div>
   </div>
 
   <div class="card">
     <h2>1. Engagement Setup</h2>
-    <label>Engagement Name</label><input id="projName" placeholder="e.g. Bluffdale Cleanup">
-    <label>Source URL/ID</label><input id="targetFolder" placeholder="Paste link to messy folder">
-    <label>Destination URL/ID</label><input id="destParent" placeholder="Defaults to My Drive">
-    <button onclick="initProject()" class="btn btn-primary">Initialize</button>
+    <label>Engagement Name</label><input id="projName" placeholder="e.g. Executive HR Archive 2026">
+    <label>Source Folder (URL or ID)</label><input id="targetFolder" placeholder="Paste link to messy source">
+    <label>Destination Parent (URL or ID)</label><input id="destParent" placeholder="Defaults to My Drive root">
+    <button onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
   </div>
 
   <div class="card">
     <h2>2. Execution Engine</h2>
-    <label>Approved Migration JSON</label>
-    <textarea id="migrationJson" rows="4" placeholder="Paste JSON from Architect Gem..."></textarea>
-    <button onclick="startMigration()" class="btn btn-primary">Execute Move</button>
-    <button onclick="closeProject()" class="btn" style="background:#f1f3f4">Finalize & Report</button>
+    <label>Approved Migration JSON Mapping</label>
+    <textarea id="migrationJson" rows="5" placeholder="Paste JSON block from Drive Migration Architect Gem..."></textarea>
+    
+    <button onclick="analyzePermissions()" class="btn btn-secondary" style="border: 1px solid #1a73e8; color: #1a73e8;">Analyze Permissions</button>
+    <button id="execBtn" onclick="startMigration()" class="btn btn-primary" disabled>Execute Migration</button>
+    <button onclick="closeProject()" class="btn btn-secondary">Finalize & Report</button>
   </div>
 
   <div class="card" id="decomCard" style="border-left-color: #ff9800; opacity: 0.4;">
-    <h2>3. Source Decommissioning</h2>
-    <p style="font-size: 13px; color: #666;">Manual verification of QC Report is required.</p>
-    <label><input type="checkbox" id="qcCheck" disabled> I have resolved all errors manually.</label><br>
-    <button id="decomBtn" onclick="decommission()" class="btn btn-disabled" disabled>Trash Source Shell</button>
+    <h2>3. Governance Cleanup</h2>
+    <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Manual confirmation required to decommission the source shell.</p>
+    <label style="text-transform: none; font-weight: normal;">
+      <input type="checkbox" id="qcCheck" disabled> I have verified the QC Report and resolved all FAILED items manually.
+    </label>
+    <button id="decomBtn" onclick="decommission()" class="btn btn-disabled" disabled style="margin-top: 15px;">Trash Source Shell</button>
   </div>
 
-  <div id="log"><b>SYSTEM READY...</b><br></div>
+  <div id="log"><b>SYSTEM READY. Awaiting Initialization...</b><br></div>
 
   <script>
     let activeEngId = "";
@@ -80,56 +91,82 @@
       const name = document.getElementById('projName').value;
       const src = document.getElementById('targetFolder').value;
       const dest = document.getElementById('destParent').value;
-      addLog(`Initializing ${name}...`);
+      addLog(`Initializing engagement: ${name}...`);
+      
       google.script.run.withSuccessHandler(res => {
         activeEngId = res.engagementId;
         activeDestId = res.destParentId;
         setStep(1, 'complete');
         setStep(2, 'active');
-        addLog(res.status + " Scope: " + res.fileCount);
+        addLog(`${res.status} Scope: ${res.fileCount} files identified.`);
       }).initializeEngagement(name, src, dest);
     }
 
+    function analyzePermissions() {
+      const data = JSON.parse(document.getElementById('migrationJson').value);
+      addLog("🔍 Analyzing permissions across scope...");
+      
+      google.script.run.withSuccessHandler(res => {
+        if (res.restricted.length > 0) {
+          addLog(`⚠️ ALERT: ${res.restricted.length} files have restricted permissions.`);
+          res.restricted.forEach(f => addLog(`   - RESTRICTED: ${f}`));
+        } else {
+          addLog("✅ All files cleared for Edit/Move access.");
+        }
+        document.getElementById('execBtn').disabled = false;
+        document.getElementById('execBtn').innerText = `Execute Migration (${res.ready.length} Ready)`;
+        setStep(2, 'complete');
+        setStep(3, 'active');
+      }).checkPermissions(data);
+    }
+
     async function startMigration() {
-      setStep(2, 'complete');
-      setStep(3, 'active');
       const data = JSON.parse(document.getElementById('migrationJson').value);
       isRunning = true;
+      addLog("🚀 Starting execution loop...");
       
       google.script.run.withSuccessHandler(async (processedIds) => {
         for (let i = 0; i < data.length; i++) {
           if (!isRunning) break;
           if (processedIds.includes(data[i].id)) {
-            addLog(`Skipped (Done): ${data[i].name}`);
+            addLog(`Skipped (Already Migrated): ${data[i].name}`);
             continue;
           }
           await new Promise(r => google.script.run.withSuccessHandler(res => {
-            addLog(`${res.status}: ${res.name}`);
+            const statusText = res.status === "FAILED" ? `❌ FAILED: ${res.message}` : `✅ ${res.status}`;
+            addLog(`${statusText}: ${res.name}`);
             r();
           }).migrateSingleFile(data[i], activeEngId, activeDestId));
         }
         setStep(3, 'complete');
         setStep(4, 'active');
-        addLog("✅ Move Cycle Complete.");
+        addLog("🏁 Migration Loop Finished.");
       }).getProcessedIds(activeEngId);
     }
 
     function closeProject() {
+      addLog("Generating Closure Report...");
       google.script.run.withSuccessHandler(res => {
         addLog(res);
         setStep(4, 'complete');
         setStep(5, 'active');
+        // Unlock Decommissioning
         document.getElementById('decomCard').style.opacity = "1";
         const check = document.getElementById('qcCheck');
         const btn = document.getElementById('decomBtn');
         check.disabled = false;
-        check.onchange = () => { btn.disabled = !check.checked; btn.className = check.checked ? 'btn btn-danger' : 'btn btn-disabled'; };
+        check.onchange = () => {
+          btn.disabled = !check.checked;
+          btn.className = check.checked ? 'btn btn-danger' : 'btn btn-disabled';
+        };
       }).finalizeEngagement(activeEngId);
     }
 
     function decommission() {
       const srcId = document.getElementById('targetFolder').value;
-      addLog("Cleaning source...");
+      if(!confirm("Are you certain? This will trash the empty source folder structure.")) return;
+      
+      addLog("🧹 Decommissioning source shell...");
       google.script.run.withSuccessHandler(res => {
         addLog(res);
         setStep(5, 'complete');
