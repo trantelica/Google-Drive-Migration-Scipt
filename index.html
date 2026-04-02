@@ -5,107 +5,125 @@
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 30px; background: #f4f7f6; color: #333; }
     .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; border-left: 5px solid #1a73e8; }
-    h2 { color: #1a73e8; margin-bottom: 20px; font-weight: 600; }
-    .input-group { margin-bottom: 15px; }
-    label { display: block; font-size: 12px; font-weight: bold; color: #666; margin-bottom: 5px; text-transform: uppercase; }
-    input, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
-    .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+    
+    /* PROGRESS MAP STYLES */
+    .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+    .step { text-align: center; flex: 1; position: relative; color: #ccc; font-size: 12px; font-weight: bold; }
+    .step.active { color: #1a73e8; }
+    .step.complete { color: #34a853; }
+    .step-icon { width: 30px; height: 30px; line-height: 30px; border-radius: 50%; border: 2px solid #ccc; margin: 0 auto 5px; background: white; }
+    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; }
+    .step.complete .step-icon { border-color: #34a853; background: #e6f4ea; }
+
+    h2 { color: #1a73e8; margin-bottom: 20px; }
+    .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; margin-right: 10px; }
     .btn-primary { background: #1a73e8; color: white; }
-    .btn-primary:hover { background: #1557b0; }
-    .btn-stop { background: #d93025; color: white; }
-    #log { height: 250px; overflow-y: auto; background: #1e1e1e; color: #4af626; padding: 20px; font-family: 'Consolas', monospace; font-size: 13px; border-radius: 8px; border: 1px solid #333; }
-    .progress-container { width: 100%; background: #e0e0e0; border-radius: 20px; margin: 20px 0; height: 10px; overflow: hidden; }
-    #progressBar { width: 0%; height: 100%; background: linear-gradient(90deg, #1a73e8, #34a853); transition: width 0.4s ease; }
+    .btn-danger { background: #d93025; color: white; }
+    .btn-disabled { background: #eee; color: #999; cursor: not-allowed; }
+    #log { height: 200px; overflow-y: auto; background: #1e1e1e; color: #4af626; padding: 15px; font-family: monospace; border-radius: 8px; }
   </style>
 </head>
 <body>
 
-  <div class="card">
-    <h2>1. Engagement Setup</h2>
-    <div class="input-group">
-      <label>Engagement Name</label>
-      <input id="projName" placeholder="e.g. Bluffdale Cleanup 2026">
-    </div>
-    <div class="input-group">
-      <label>Source Folder URL/ID</label>
-      <input id="targetFolder" placeholder="Paste link to messy folder">
-    </div>
-    <div class="input-group">
-      <label>Destination Parent URL/ID (Optional)</label>
-      <input id="destParent" placeholder="Defaults to My Drive root">
-    </div>
-    <button onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
+  <div class="stepper" id="stepper">
+    <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
+    <div class="step" id="s2"><div class="step-icon">2</div>DESIGN</div>
+    <div class="step" id="s3"><div class="step-icon">3</div>MOVE</div>
+    <div class="step" id="s4"><div class="step-icon">4</div>QC</div>
+    <div class="step" id="s5"><div class="step-icon">5</div>CLEANUP</div>
   </div>
 
   <div class="card">
-    <h2>2. Execution Engine</h2>
-    <label>Migration JSON</label>
-    <textarea id="migrationJson" rows="5" placeholder="Paste your proposed schema here..."></textarea>
-    <div class="progress-container"><div id="progressBar"></div></div>
-    <button id="startBtn" onclick="startMigration()" class="btn btn-primary">Start Migration</button>
-    <button onclick="stop()" class="btn btn-stop">Emergency Stop</button>
-    <button onclick="closeProject()" class="btn" style="background:#eee">Close & Report</button>
+    <h2>Engagement Setup</h2>
+    <input id="projName" placeholder="Engagement Name">
+    <input id="targetFolder" placeholder="Source Folder URL/ID" style="margin-top:10px">
+    <input id="destParent" placeholder="Destination Parent URL/ID (Optional)" style="margin-top:10px">
+    <button onclick="initProject()" class="btn btn-primary" style="margin-top:15px">Initialize</button>
   </div>
 
-  <div id="log"><b>SYSTEM READY...</b><br></div>
+  <div class="card">
+    <h2>Execution Engine</h2>
+    <textarea id="migrationJson" rows="4" placeholder="Paste Approved JSON..."></textarea>
+    <div id="progressBarContainer" class="progress-container" style="display:none">
+       <div id="progressBar"></div>
+    </div>
+    <button onclick="startMigration()" class="btn btn-primary" style="margin-top:15px">Execute Move</button>
+    <button onclick="closeProject()" class="btn" style="background:#eee">Finalize & Report</button>
+  </div>
+
+  <div class="card" id="decommissionCard" style="border-left-color: #ff9800; opacity: 0.5;">
+    <h2>Source Decommissioning</h2>
+    <p style="font-size: 13px; color: #666;">Manual sign-off required before trashing source shell.</p>
+    <label><input type="checkbox" id="qcCheck"> I have reviewed the QC Report and resolved all errors.</label><br><br>
+    <button id="decomBtn" onclick="decommission()" class="btn btn-disabled" disabled>Trash Source Shell</button>
+  </div>
+
+  <div id="log"><b>SYSTEM READY...</b></div>
 
   <script>
     let activeEngId = "";
     let activeDestId = "";
     let isRunning = false;
 
+    function setStep(stepNum, status) {
+      const el = document.getElementById('s' + stepNum);
+      el.className = 'step ' + status;
+    }
+
     function addLog(msg) {
       const log = document.getElementById('log');
-      log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
+      log.innerHTML += `<div>> ${msg}</div>`;
       log.scrollTop = log.scrollHeight;
     }
 
     function initProject() {
-      const name = document.getElementById('projName').value;
-      const src = document.getElementById('targetFolder').value;
-      const dest = document.getElementById('destParent').value;
-      addLog(`Initializing engagement: ${name}...`);
+      setStep(1, 'active');
       google.script.run.withSuccessHandler(res => {
         activeEngId = res.engagementId;
         activeDestId = res.destParentId;
+        setStep(1, 'complete');
+        setStep(2, 'active');
         addLog(res.status);
-        addLog(`Scope: ${res.fileCount} files found.`);
-      }).initializeEngagement(name, src, dest);
+      }).initializeEngagement(document.getElementById('projName').value, document.getElementById('targetFolder').value, document.getElementById('destParent').value);
     }
 
     async function startMigration() {
-      if(!activeEngId) return alert("Must initialize engagement first.");
-      let data;
-      try { data = JSON.parse(document.getElementById('migrationJson').value); } 
-      catch (e) { return alert("Invalid JSON format."); }
-
+      setStep(2, 'complete');
+      setStep(3, 'active');
+      const data = JSON.parse(document.getElementById('migrationJson').value);
       isRunning = true;
-      addLog("Checking for previously processed files...");
       
       google.script.run.withSuccessHandler(async (processedIds) => {
-        const total = data.length;
-        for (let i = 0; i < total; i++) {
+        for (let i = 0; i < data.length; i++) {
           if (!isRunning) break;
-          
-          if (processedIds.includes(data[i].id)) {
-            addLog(`Skipping (Already Processed): ${data[i].name}`);
-            continue;
-          }
-
-          document.getElementById('progressBar').style.width = Math.round(((i+1)/total)*100) + "%";
+          if (processedIds.includes(data[i].id)) continue;
           await new Promise(r => google.script.run.withSuccessHandler(res => {
             addLog(`${res.status}: ${res.name}`);
             r();
           }).migrateSingleFile(data[i], activeEngId, activeDestId));
         }
-        addLog("✅ Execution Cycle Complete.");
+        setStep(3, 'complete');
+        setStep(4, 'active');
       }).getProcessedIds(activeEngId);
     }
 
-    function stop() { isRunning = false; addLog("🛑 Stopping execution..."); }
     function closeProject() {
-      addLog("Finalizing report...");
-      google.script.run.withSuccessHandler(addLog).finalizeEngagement(activeEngId);
+      google.script.run.withSuccessHandler(res => {
+        addLog(res);
+        setStep(4, 'complete');
+        setStep(5, 'active');
+        document.getElementById('decommissionCard').style.opacity = "1";
+        const check = document.getElementById('qcCheck');
+        const btn = document.getElementById('decomBtn');
+        check.onchange = () => { btn.disabled = !check.checked; btn.className = check.checked ? 'btn btn-danger' : 'btn btn-disabled'; };
+      }).finalizeEngagement(activeEngId);
+    }
+
+    function decommission() {
+      google.script.run.withSuccessHandler(res => {
+        addLog(res);
+        setStep(5, 'complete');
+      }).decommissionSource(activeEngId, document.getElementById('targetFolder').value, activeDestId);
     }
   </script>
 </body>
