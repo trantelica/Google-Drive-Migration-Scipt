@@ -1,6 +1,5 @@
 /**
- * UNIFIED MIGRATION FRAMEWORK (v6.7 - Ironclad Edition)
- * Features: Exponential Backoff, Permissions Analyzer, Smart Decommissioning.
+ * UNIFIED MIGRATION FRAMEWORK (v6.9 - Full Visibility Edition)
  */
 
 const CONFIG = { 
@@ -9,7 +8,7 @@ const CONFIG = {
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-      .setTitle('Migration Portal v6.7')
+      .setTitle('Migration Portal v6.9')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -77,44 +76,33 @@ function checkPermissions(items) {
   return report;
 }
 
-/** PHASE 3: RESILIENT MIGRATION (WITH RETRY LOGIC) */
+/** PHASE 3: RESILIENT MIGRATION */
 function migrateSingleFile(item, engagementFolderId, destParentId) {
   let attempts = 0;
   const maxAttempts = 3;
-  
   while (attempts < maxAttempts) {
     try {
       const engagementFolder = DriveApp.getFolderById(engagementFolderId);
       const root = DriveApp.getFolderById(destParentId);
       const file = DriveApp.getFileById(item.id);
       const preSize = file.getSize();
-
       file.setDescription(`--- MIGRATION LOG ---\nOriginal Path: ${item.origin}\nSize: ${preSize} bytes\nMigrated: ${new Date().toISOString()}`);
-
       let targetPath = item.newPath;
-      // -X Routing for shared files
       if (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0) {
         const parts = targetPath.split('/');
         parts[0] = parts[0].includes('-X') ? parts[0] : parts[0] + " -X";
         targetPath = parts.join('/') + "/-X";
       }
-
       const destFolder = navigateToPath(root, targetPath);
       destFolder.addFile(file);
-      
       const postSize = file.getSize();
       const status = (preSize === postSize) ? "SUCCESS" : "SIZE_MISMATCH";
-
       logAction(engagementFolder, { name: item.name, id: item.id, status: status, target: targetPath, preSize: preSize, postSize: postSize });
       return { status: status, name: item.name };
-
     } catch (e) {
       attempts++;
-      if (attempts < maxAttempts) {
-        Utilities.sleep(Math.pow(2, attempts) * 1000); // Exponential backoff (2s, 4s...)
-      } else {
-        return { status: "FAILED", name: item.name, message: e.message };
-      }
+      if (attempts < maxAttempts) { Utilities.sleep(Math.pow(2, attempts) * 1000); } 
+      else { return { status: "FAILED", name: item.name, message: e.message }; }
     }
   }
 }
@@ -125,7 +113,6 @@ function finalizeEngagement(engagementFolderId) {
     const folder = DriveApp.getFolderById(engagementFolderId);
     const logs = folder.getFilesByName("execution_action_log.csv");
     if (!logs.hasNext()) return "❌ Error: No log found.";
-    
     const logData = logs.next().getBlob().getDataAsString();
     const report = `ENGAGEMENT CLOSURE REPORT\nGenerated: ${new Date().toLocaleString()}\n---------------------------\n${logData}`;
     folder.createFile("reconciliation_summary.txt", report);
@@ -133,8 +120,8 @@ function finalizeEngagement(engagementFolderId) {
   } catch (e) { return "❌ Closure Error: " + e.message; }
 }
 
-/** PHASE 5: SMART DECOMMISSIONING */
-function decommissionSource(engagementFolderId, targetFolderId, destParentId) {
+/** PHASE 5: DECOMMISSION */
+function decommissionSource(engagementFolderId, targetFolderId) {
   try {
     const targetFolder = DriveApp.getFolderById(extractId(targetFolderId));
     unlinkSource(targetFolder);
@@ -143,7 +130,6 @@ function decommissionSource(engagementFolderId, targetFolderId, destParentId) {
   } catch (e) { return "❌ Decommission Error: " + e.message; }
 }
 
-/** HELPERS */
 function extractId(url) {
   const match = url.match(/[-\w]{25,}/);
   return match ? match[0] : url;
