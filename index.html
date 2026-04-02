@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 30px; background: #f4f7f6; color: #333; }
+    .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; border-left: 5px solid #1a73e8; }
+    h2 { color: #1a73e8; margin-bottom: 20px; font-weight: 600; }
+    .input-group { margin-bottom: 15px; }
+    label { display: block; font-size: 12px; font-weight: bold; color: #666; margin-bottom: 5px; text-transform: uppercase; }
+    input, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+    .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+    .btn-primary { background: #1a73e8; color: white; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-stop { background: #d93025; color: white; }
+    #log { height: 250px; overflow-y: auto; background: #1e1e1e; color: #4af626; padding: 20px; font-family: 'Consolas', monospace; font-size: 13px; border-radius: 8px; border: 1px solid #333; }
+    .progress-container { width: 100%; background: #e0e0e0; border-radius: 20px; margin: 20px 0; height: 10px; overflow: hidden; }
+    #progressBar { width: 0%; height: 100%; background: linear-gradient(90deg, #1a73e8, #34a853); transition: width 0.4s ease; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>1. Engagement Setup</h2>
+    <div class="input-group">
+      <label>Engagement Name</label>
+      <input id="projName" placeholder="e.g. Bluffdale Cleanup 2026">
+    </div>
+    <div class="input-group">
+      <label>Source Folder URL/ID</label>
+      <input id="targetFolder" placeholder="Paste link to messy folder">
+    </div>
+    <div class="input-group">
+      <label>Destination Parent URL/ID (Optional)</label>
+      <input id="destParent" placeholder="Defaults to My Drive root">
+    </div>
+    <button onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
+  </div>
+
+  <div class="card">
+    <h2>2. Execution Engine</h2>
+    <label>Migration JSON</label>
+    <textarea id="migrationJson" rows="5" placeholder="Paste your proposed schema here..."></textarea>
+    <div class="progress-container"><div id="progressBar"></div></div>
+    <button id="startBtn" onclick="startMigration()" class="btn btn-primary">Start Migration</button>
+    <button onclick="stop()" class="btn btn-stop">Emergency Stop</button>
+    <button onclick="closeProject()" class="btn" style="background:#eee">Close & Report</button>
+  </div>
+
+  <div id="log"><b>SYSTEM READY...</b><br></div>
+
+  <script>
+    let activeEngId = "";
+    let activeDestId = "";
+    let isRunning = false;
+
+    function addLog(msg) {
+      const log = document.getElementById('log');
+      log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function initProject() {
+      const name = document.getElementById('projName').value;
+      const src = document.getElementById('targetFolder').value;
+      const dest = document.getElementById('destParent').value;
+      addLog(`Initializing engagement: ${name}...`);
+      google.script.run.withSuccessHandler(res => {
+        activeEngId = res.engagementId;
+        activeDestId = res.destParentId;
+        addLog(res.status);
+        addLog(`Scope: ${res.fileCount} files found.`);
+      }).initializeEngagement(name, src, dest);
+    }
+
+    async function startMigration() {
+      if(!activeEngId) return alert("Must initialize engagement first.");
+      let data;
+      try { data = JSON.parse(document.getElementById('migrationJson').value); } 
+      catch (e) { return alert("Invalid JSON format."); }
+
+      isRunning = true;
+      addLog("Checking for previously processed files...");
+      
+      google.script.run.withSuccessHandler(async (processedIds) => {
+        const total = data.length;
+        for (let i = 0; i < total; i++) {
+          if (!isRunning) break;
+          
+          if (processedIds.includes(data[i].id)) {
+            addLog(`Skipping (Already Processed): ${data[i].name}`);
+            continue;
+          }
+
+          document.getElementById('progressBar').style.width = Math.round(((i+1)/total)*100) + "%";
+          await new Promise(r => google.script.run.withSuccessHandler(res => {
+            addLog(`${res.status}: ${res.name}`);
+            r();
+          }).migrateSingleFile(data[i], activeEngId, activeDestId));
+        }
+        addLog("✅ Execution Cycle Complete.");
+      }).getProcessedIds(activeEngId);
+    }
+
+    function stop() { isRunning = false; addLog("🛑 Stopping execution..."); }
+    function closeProject() {
+      addLog("Finalizing report...");
+      google.script.run.withSuccessHandler(addLog).finalizeEngagement(activeEngId);
+    }
+  </script>
+</body>
+</html>
