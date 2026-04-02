@@ -1,60 +1,152 @@
 /**
- * DRIVE MIGRATION ENGINE: HYBRID MODEL
- * 1. Builds Shells (Phase 2.1)
- * 2. Processes JSON Chunks (Phase 3.3)
- * 3. Audits Permissions (-X Logic)
+ * UNIFIED MIGRATION FRAMEWORK (v6.6 - Architect Edition)
  */
 
-const CONFIG = {
-  projectFolderId: "ID_OF_YOUR_FOLDER_STRUCTURE_S", 
-  targetRootName: "MIGRATED DRIVE -S",
-  snapshotFolderName: "snapshots-sub"
+const CONFIG = { 
+  logsSubName: "logs-sub"
 };
 
-function runMigrationChunk() {
-  const projectRoot = DriveApp.getFolderById(CONFIG.projectFolderId);
-  const snapshots = projectRoot.getFoldersByName(CONFIG.snapshotFolderName).next();
-  const jsonFiles = snapshots.getFilesByType(MimeType.PLAIN_TEXT); // Or .JSON
-
-  if (!jsonFiles.hasNext()) {
-    Logger.log("No migration chunks found in snapshots-sub.");
-    return;
-  }
-
-  const manifestFile = jsonFiles.next();
-  const manifest = JSON.parse(manifestFile.getContentText());
-  const migratedRoot = getOrCreateFolder(DriveApp.getRootFolder(), CONFIG.targetRootName);
-
-  manifest.forEach(item => {
-    try {
-      const file = DriveApp.getFileById(item.id);
-      let targetPath = item.newPath;
-
-      // -X AUTOMATION: Check if shared
-      if (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0) {
-        // Reroute to -X within the same -S folder
-        targetPath = targetPath.replace("-S", "-S/-X"); 
-      }
-
-      const destFolder = navigateToPath(migratedRoot, targetPath);
-      destFolder.addFile(file); 
-      
-      Logger.log(`Placed ${file.getName()} in ${targetPath}`);
-    } catch (e) {
-      Logger.log(`Error on File ${item.id}: ${e.message}`);
-    }
-  });
-
-  // Archive the manifest after completion
-  // manifestFile.setName("COMPLETED_" + manifestFile.getName());
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index')
+      .setTitle('Migration Portal v6.6')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-// Helper: Standard Schema Navigation
-function navigateToPath(root, path) {
-  return path.split('/').reduce((parent, name) => getOrCreateFolder(parent, name), root);
+/** * PHASE 1: INITIALIZE ENGAGEMENT */
+function initializeEngagement(projectName, targetFolderId, destParentId) {
+  try {
+    const cleanTargetId = extractId(targetFolderId);
+    const cleanDestId = destParentId ? extractId(destParentId) : "root";
+    
+    const date = new Date().toISOString().split('T')[0];
+    const engagementName = `${date} - ${projectName}`;
+    
+    // Setup Directory Structure
+    const destParent = cleanDestId === "root" ? DriveApp.getRootFolder() : DriveApp.getFolderById(cleanDestId);
+    const logsSubRoot = getOrCreateFolder(destParent, CONFIG.logsSubName);
+    const engagementFolder = getOrCreateFolder(logsSubRoot, engagementName);
+    
+    // Phase 1.1: Pre-Game Discovery Snapshot
+    const target = DriveApp.getFolderById(cleanTargetId);
+    let csvHeader = "File ID,Name,Original_Path,Size_Bytes\n";
+    let csvData = "";
+    
+    function walk(folder, path) {
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const f = files.next();
+        csvData += `${f.getId()},"${f.getName().replace(/"/g, '""')}","${path}",${f.getSize()}\n`;
+      }
+      const subs = folder.getFolders();
+      while (subs.hasNext()) {
+        const s = subs.next();
+        walk(s, path + "/" + s.getName());
+      }
+    }
+    walk(target, target.getName());
+    
+    engagementFolder.createFile(`pre_migration_registry.csv`, csvHeader + csvData);
+    
+    return {
+      engagementId: engagementFolder.getId(),
+      destParentId: destParent.getId(),
+      name: engagementName,
+      fileCount: csvData.split('\n').length - 1,
+      status: "✅ Engagement Initialized. Pre-Game Snapshot Created."
+    };
+  } catch (e) {
+    return "❌ Initialization Error: " + e.message;
+  }
+}
+
+/** * RESUMABILITY: FETCH PROCESSED IDs */
+function getProcessedIds(engagementFolderId) {
+  try {
+    const folder = DriveApp.getFolderById(engagementFolderId);
+    const files = folder.getFilesByName("execution_action_log.csv");
+    if (!files.hasNext()) return [];
+    
+    const content = files.next().getBlob().getDataAsString();
+    const rows = content.split('\n');
+    const processed = [];
+    rows.forEach(row => {
+      const cols = row.split(',');
+      if (cols[3] === "SUCCESS") processed.push(cols[2]); // Index 2 is ID, Index 3 is Status
+    });
+    return processed;
+  } catch (e) { return []; }
+}
+
+/** * PHASE 3.3: MIGRATION & QC */
+function migrateSingleFile(item, engagementFolderId, destParentId) {
+  try {
+    const engagementFolder = DriveApp.getFolderById(engagementFolderId);
+    const root = DriveApp.getFolderById(destParentId);
+    const file = DriveApp.getFileById(item.id);
+    const preSize = file.getSize();
+
+    // Metadata Stamp
+    file.setDescription(`--- MIGRATION LOG ---\nOriginal Path: ${item.origin}\nSize: ${preSize} bytes\nMigrated: ${new Date().toISOString()}`);
+
+    // Shared File Routing
+    let targetPath = item.newPath;
+    if (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0) {
+      const parts = targetPath.split('/');
+      parts[0] = parts[0].includes('-S') ? parts[0] : parts[0] + " -X";
+      targetPath = parts.join('/') + "/-X";
+    }
+
+    const destFolder = navigateToPath(root, targetPath);
+    destFolder.addFile(file);
+    
+    const postSize = file.getSize();
+    const status = (preSize === postSize) ? "SUCCESS" : "SIZE_MISMATCH";
+
+    logAction(engagementFolder, { name: item.name, id: item.id, status: status, target: targetPath, preSize: preSize, postSize: postSize });
+
+    return { status: status, name: item.name };
+  } catch (e) {
+    return { status: "FAILED", name: item.name, message: e.message };
+  }
+}
+
+/** * PHASE 4.0: CLOSE & REPORT */
+function finalizeEngagement(engagementFolderId) {
+  const folder = DriveApp.getFolderById(engagementFolderId);
+  const logFile = folder.getFilesByName("execution_action_log.csv").next();
+  const logData = logFile.getBlob().getDataAsString().split('\n');
+  
+  let stats = { SUCCESS: 0, FAILED: 0, SIZE_MISMATCH: 0 };
+  logData.forEach(row => {
+    if (row.includes("SUCCESS")) stats.SUCCESS++;
+    if (row.includes("FAILED")) stats.FAILED++;
+    if (row.includes("SIZE_MISMATCH")) stats.SIZE_MISMATCH++;
+  });
+
+  const report = `ENGAGEMENT CLOSURE REPORT\nGenerated: ${new Date().toLocaleString()}\n---------------------------\nSuccess: ${stats.SUCCESS}\nMismatch: ${stats.SIZE_MISMATCH}\nFailed: ${stats.FAILED}`;
+  folder.createFile("reconciliation_summary.txt", report);
+  return "✅ Project Closed. Report deposited.";
+}
+
+// HELPERS
+function extractId(url) {
+  const match = url.match(/[-\w]{25,}/);
+  return match ? match[0] : url;
+}
+
+function logAction(folder, data) {
+  const logName = "execution_action_log.csv";
+  const files = folder.getFilesByName(logName);
+  let logFile = files.hasNext() ? files.next() : folder.createFile(logName, "Timestamp,Name,ID,Status,Target,Size_Match\n");
+  const entry = `${new Date().toISOString()},"${data.name}",${data.id},${data.status},"${data.target}",${data.preSize == data.postSize}\n`;
+  logFile.setContent(logFile.getBlob().getDataAsString() + entry);
 }
 
 function getOrCreateFolder(parent, name) {
   const folders = parent.getFoldersByName(name);
   return folders.hasNext() ? folders.next() : parent.createFolder(name);
+}
+
+function navigateToPath(root, path) {
+  return path.split('/').reduce((p, n) => getOrCreateFolder(p, n), root);
 }
