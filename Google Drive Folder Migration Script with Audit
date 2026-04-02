@@ -1,14 +1,14 @@
 /**
- * UNIFIED MIGRATION FRAMEWORK (v6.9 - Full Visibility Edition)
+ * UNIFIED MIGRATION FRAMEWORK (v6.11 - Schema Purist Edition)
  */
 
 const CONFIG = { 
-  logsSubName: "logs-sub"
+  logsSubName: "Logs -S" // Updated to comply with standard taxonomy
 };
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-      .setTitle('Migration Portal v6.9')
+      .setTitle('Migration Portal v6.11')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -86,18 +86,26 @@ function migrateSingleFile(item, engagementFolderId, destParentId) {
       const root = DriveApp.getFolderById(destParentId);
       const file = DriveApp.getFileById(item.id);
       const preSize = file.getSize();
+      
       file.setDescription(`--- MIGRATION LOG ---\nOriginal Path: ${item.origin}\nSize: ${preSize} bytes\nMigrated: ${new Date().toISOString()}`);
+      
       let targetPath = item.newPath;
-      if (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0) {
-        const parts = targetPath.split('/');
-        parts[0] = parts[0].includes('-X') ? parts[0] : parts[0] + " -X";
-        targetPath = parts.join('/') + "/-X";
+      
+      // Strip filename from the path if the Gem accidentally included it
+      if (targetPath.endsWith("/" + item.name) || targetPath.endsWith(item.name)) {
+        targetPath = targetPath.substring(0, targetPath.lastIndexOf('/'));
       }
+
+      // Check for shared status to log it silently (No path alteration)
+      const isShared = (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0);
+      
       const destFolder = navigateToPath(root, targetPath);
       destFolder.addFile(file);
+      
       const postSize = file.getSize();
       const status = (preSize === postSize) ? "SUCCESS" : "SIZE_MISMATCH";
-      logAction(engagementFolder, { name: item.name, id: item.id, status: status, target: targetPath, preSize: preSize, postSize: postSize });
+      
+      logAction(engagementFolder, { name: item.name, id: item.id, status: status, shared: isShared, target: targetPath, preSize: preSize, postSize: postSize });
       return { status: status, name: item.name };
     } catch (e) {
       attempts++;
@@ -131,6 +139,7 @@ function decommissionSource(engagementFolderId, targetFolderId) {
 }
 
 function extractId(url) {
+  // This inherently strips ?usp=sharing and trailing slashes
   const match = url.match(/[-\w]{25,}/);
   return match ? match[0] : url;
 }
@@ -138,8 +147,8 @@ function extractId(url) {
 function logAction(folder, data) {
   const logName = "execution_action_log.csv";
   const files = folder.getFilesByName(logName);
-  let logFile = files.hasNext() ? files.next() : folder.createFile(logName, "Timestamp,Name,ID,Status,Target,Size_Match\n");
-  const entry = `${new Date().toISOString()},"${data.name}",${data.id},${data.status},"${data.target}",${data.preSize == data.postSize}\n`;
+  let logFile = files.hasNext() ? files.next() : folder.createFile(logName, "Timestamp,Name,ID,Status,Is_Shared,Target,Size_Match\n");
+  const entry = `${new Date().toISOString()},"${data.name}",${data.id},${data.status},${data.shared},"${data.target}",${data.preSize == data.postSize}\n`;
   logFile.setContent(logFile.getBlob().getDataAsString() + entry);
 }
 
