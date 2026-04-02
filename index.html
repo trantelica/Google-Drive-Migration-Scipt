@@ -3,24 +3,26 @@
 <head>
   <base target="_top">
   <style>
-    body { font-family: 'Segoe UI', sans-serif; padding: 30px; background: #f4f7f6; color: #333; }
+    body { font-family: 'Segoe UI', sans-serif; padding: 30px; background: #f4f7f6; color: #333; line-height: 1.5; }
     .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; border-left: 5px solid #1a73e8; }
     
-    /* PROGRESS MAP STYLES */
+    /* DYNAMIC STEPPER */
     .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-    .step { text-align: center; flex: 1; position: relative; color: #ccc; font-size: 12px; font-weight: bold; }
+    .step { text-align: center; flex: 1; position: relative; color: #ccc; font-size: 11px; font-weight: bold; }
     .step.active { color: #1a73e8; }
     .step.complete { color: #34a853; }
-    .step-icon { width: 30px; height: 30px; line-height: 30px; border-radius: 50%; border: 2px solid #ccc; margin: 0 auto 5px; background: white; }
-    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; }
+    .step-icon { width: 28px; height: 28px; line-height: 28px; border-radius: 50%; border: 2px solid #ccc; margin: 0 auto 5px; background: white; transition: 0.3s; }
+    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; transform: scale(1.1); }
     .step.complete .step-icon { border-color: #34a853; background: #e6f4ea; }
 
-    h2 { color: #1a73e8; margin-bottom: 20px; }
-    .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; margin-right: 10px; }
+    h2 { color: #1a73e8; margin-bottom: 15px; font-size: 18px; }
+    label { font-size: 12px; font-weight: bold; color: #666; display: block; margin-bottom: 5px; }
+    input, textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; }
+    .btn { padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; margin-right: 8px; }
     .btn-primary { background: #1a73e8; color: white; }
     .btn-danger { background: #d93025; color: white; }
     .btn-disabled { background: #eee; color: #999; cursor: not-allowed; }
-    #log { height: 200px; overflow-y: auto; background: #1e1e1e; color: #4af626; padding: 15px; font-family: monospace; border-radius: 8px; }
+    #log { height: 180px; overflow-y: auto; background: #1e1e1e; color: #4af626; padding: 15px; font-family: 'Consolas', monospace; font-size: 12px; border-radius: 8px; border: 1px solid #333; }
   </style>
 </head>
 <body>
@@ -34,31 +36,29 @@
   </div>
 
   <div class="card">
-    <h2>Engagement Setup</h2>
-    <input id="projName" placeholder="Engagement Name">
-    <input id="targetFolder" placeholder="Source Folder URL/ID" style="margin-top:10px">
-    <input id="destParent" placeholder="Destination Parent URL/ID (Optional)" style="margin-top:10px">
-    <button onclick="initProject()" class="btn btn-primary" style="margin-top:15px">Initialize</button>
+    <h2>1. Engagement Setup</h2>
+    <label>Engagement Name</label><input id="projName" placeholder="e.g. Bluffdale Cleanup">
+    <label>Source URL/ID</label><input id="targetFolder" placeholder="Paste link to messy folder">
+    <label>Destination URL/ID</label><input id="destParent" placeholder="Defaults to My Drive">
+    <button onclick="initProject()" class="btn btn-primary">Initialize</button>
   </div>
 
   <div class="card">
-    <h2>Execution Engine</h2>
-    <textarea id="migrationJson" rows="4" placeholder="Paste Approved JSON..."></textarea>
-    <div id="progressBarContainer" class="progress-container" style="display:none">
-       <div id="progressBar"></div>
-    </div>
-    <button onclick="startMigration()" class="btn btn-primary" style="margin-top:15px">Execute Move</button>
-    <button onclick="closeProject()" class="btn" style="background:#eee">Finalize & Report</button>
+    <h2>2. Execution Engine</h2>
+    <label>Approved Migration JSON</label>
+    <textarea id="migrationJson" rows="4" placeholder="Paste JSON from Architect Gem..."></textarea>
+    <button onclick="startMigration()" class="btn btn-primary">Execute Move</button>
+    <button onclick="closeProject()" class="btn" style="background:#f1f3f4">Finalize & Report</button>
   </div>
 
-  <div class="card" id="decommissionCard" style="border-left-color: #ff9800; opacity: 0.5;">
-    <h2>Source Decommissioning</h2>
-    <p style="font-size: 13px; color: #666;">Manual sign-off required before trashing source shell.</p>
-    <label><input type="checkbox" id="qcCheck"> I have reviewed the QC Report and resolved all errors.</label><br><br>
+  <div class="card" id="decomCard" style="border-left-color: #ff9800; opacity: 0.4;">
+    <h2>3. Source Decommissioning</h2>
+    <p style="font-size: 13px; color: #666;">Manual verification of QC Report is required.</p>
+    <label><input type="checkbox" id="qcCheck" disabled> I have resolved all errors manually.</label><br>
     <button id="decomBtn" onclick="decommission()" class="btn btn-disabled" disabled>Trash Source Shell</button>
   </div>
 
-  <div id="log"><b>SYSTEM READY...</b></div>
+  <div id="log"><b>SYSTEM READY...</b><br></div>
 
   <script>
     let activeEngId = "";
@@ -66,25 +66,28 @@
     let isRunning = false;
 
     function setStep(stepNum, status) {
-      const el = document.getElementById('s' + stepNum);
-      el.className = 'step ' + status;
+      document.getElementById('s' + stepNum).className = 'step ' + status;
     }
 
     function addLog(msg) {
       const log = document.getElementById('log');
-      log.innerHTML += `<div>> ${msg}</div>`;
+      log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
       log.scrollTop = log.scrollHeight;
     }
 
     function initProject() {
       setStep(1, 'active');
+      const name = document.getElementById('projName').value;
+      const src = document.getElementById('targetFolder').value;
+      const dest = document.getElementById('destParent').value;
+      addLog(`Initializing ${name}...`);
       google.script.run.withSuccessHandler(res => {
         activeEngId = res.engagementId;
         activeDestId = res.destParentId;
         setStep(1, 'complete');
         setStep(2, 'active');
-        addLog(res.status);
-      }).initializeEngagement(document.getElementById('projName').value, document.getElementById('targetFolder').value, document.getElementById('destParent').value);
+        addLog(res.status + " Scope: " + res.fileCount);
+      }).initializeEngagement(name, src, dest);
     }
 
     async function startMigration() {
@@ -96,7 +99,10 @@
       google.script.run.withSuccessHandler(async (processedIds) => {
         for (let i = 0; i < data.length; i++) {
           if (!isRunning) break;
-          if (processedIds.includes(data[i].id)) continue;
+          if (processedIds.includes(data[i].id)) {
+            addLog(`Skipped (Done): ${data[i].name}`);
+            continue;
+          }
           await new Promise(r => google.script.run.withSuccessHandler(res => {
             addLog(`${res.status}: ${res.name}`);
             r();
@@ -104,6 +110,7 @@
         }
         setStep(3, 'complete');
         setStep(4, 'active');
+        addLog("✅ Move Cycle Complete.");
       }).getProcessedIds(activeEngId);
     }
 
@@ -112,18 +119,21 @@
         addLog(res);
         setStep(4, 'complete');
         setStep(5, 'active');
-        document.getElementById('decommissionCard').style.opacity = "1";
+        document.getElementById('decomCard').style.opacity = "1";
         const check = document.getElementById('qcCheck');
         const btn = document.getElementById('decomBtn');
+        check.disabled = false;
         check.onchange = () => { btn.disabled = !check.checked; btn.className = check.checked ? 'btn btn-danger' : 'btn btn-disabled'; };
       }).finalizeEngagement(activeEngId);
     }
 
     function decommission() {
+      const srcId = document.getElementById('targetFolder').value;
+      addLog("Cleaning source...");
       google.script.run.withSuccessHandler(res => {
         addLog(res);
         setStep(5, 'complete');
-      }).decommissionSource(activeEngId, document.getElementById('targetFolder').value, activeDestId);
+      }).decommissionSource(activeEngId, srcId);
     }
   </script>
 </body>
