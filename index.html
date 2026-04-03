@@ -18,11 +18,11 @@
     label { font-size: 12px; font-weight: 700; color: #4b4f56; display: block; margin-bottom: 5px; }
     input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; }
     
-    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; font-size: 13px; }
+    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; font-size: 13px; transition: 0.2s; }
     .btn-primary { background: #1a73e8; color: white; }
     .btn-secondary { background: #f1f3f4; color: #1c1e21; border: 1px solid #ddd; }
     .btn-danger { background: #d93025; color: white; }
-    .btn-disabled { background: #eee; color: #999; cursor: not-allowed; }
+    .btn:disabled { background: #e0e0e0; color: #888; cursor: not-allowed; border: none; }
     
     #log { height: 250px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: 'Consolas', monospace; font-size: 13px; border-radius: 10px; }
     .log-inst { color: #ffeb3b; font-weight: bold; border-left: 3px solid #ffeb3b; padding-left: 10px; margin: 10px 0; }
@@ -44,22 +44,22 @@
     <label>Engagement Name</label><input id="projName" placeholder="e.g. Project Delta Cleanup">
     <label>Source URL/ID</label><input id="targetFolder" placeholder="Paste link to messy source">
     <label>Destination Parent URL/ID</label><input id="destParent" placeholder="Defaults to My Drive">
-    <button onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
+    <button id="initBtn" onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
   </div>
 
   <div class="card">
     <h2>2. Execution Engine</h2>
     <label>Approved Migration JSON</label>
     <textarea id="migrationJson" rows="4" placeholder="Paste JSON block here..."></textarea>
-    <button onclick="analyzePermissions()" class="btn btn-secondary">Analyze Permissions</button>
+    <button id="analyzeBtn" onclick="analyzePermissions()" class="btn btn-secondary">Analyze Permissions</button>
     <button id="execBtn" onclick="startMigration()" class="btn btn-primary" disabled>Execute Migration</button>
-    <button onclick="closeProject()" class="btn btn-secondary">Finalize & Report</button>
+    <button id="closeBtn" onclick="closeProject()" class="btn btn-secondary">Finalize & Report</button>
   </div>
 
   <div class="card" id="decomCard" style="opacity: 0.4;">
     <h2>3. Source Decommissioning</h2>
     <label><input type="checkbox" id="qcCheck" disabled> I have resolved all errors manually.</label>
-    <button id="decomBtn" onclick="decommission()" class="btn btn-disabled" disabled style="margin-top:15px">Trash Source Shell</button>
+    <button id="decomBtn" onclick="decommission()" class="btn" disabled style="margin-top:15px; background: #eee; color: #999;">Trash Source Shell</button>
   </div>
 
   <div id="log"><b>SYSTEM READY. Awaiting Stage 1...</b></div>
@@ -84,10 +84,24 @@
       log.scrollTop = log.scrollHeight;
     }
 
+    function toggleButton(btnId, isLoading, defaultText = "") {
+      const btn = document.getElementById(btnId);
+      if (isLoading) {
+        btn.dataset.text = btn.innerText;
+        btn.innerText = "⏳ Processing...";
+        btn.disabled = true;
+      } else {
+        btn.innerText = defaultText || btn.dataset.text;
+        btn.disabled = false;
+      }
+    }
+
     function initProject() {
+      toggleButton('initBtn', true);
       setStep(1, 'active');
       const name = document.getElementById('projName').value;
       addLog(`Initializing ${name}...`);
+      
       google.script.run.withSuccessHandler(res => {
         activeEngId = res.engagementId;
         activeDestId = res.destParentId;
@@ -95,37 +109,40 @@
         setStep(2, 'active');
         addLog(res.status + " Scope: " + res.fileCount);
         addInstruction("Copy the file scope from the log above. Go to the Drive Migration Architect Gem and provide this list to negotiate your design.");
+        toggleButton('initBtn', false, "Engagement Initialized");
+        document.getElementById('initBtn').disabled = true; // Lock after success
       }).initializeEngagement(name, document.getElementById('targetFolder').value, document.getElementById('destParent').value);
     }
 
     function analyzePermissions() {
+      toggleButton('analyzeBtn', true);
       const data = JSON.parse(document.getElementById('migrationJson').value);
       addLog("🔍 Analyzing permissions...");
+      
       google.script.run.withSuccessHandler(res => {
         if (res.restricted.length > 0) {
           addLog(`⚠️ ALERT: ${res.restricted.length} files restricted.`, 'log-warn');
-          
-          // --- THE MISSING LOOP RESTORED ---
-          res.restricted.forEach(fileInfo => {
-            addLog(`   - RESTRICTED: ${fileInfo}`, 'log-warn');
-          });
-          // ---------------------------------
-          
-          addInstruction("Identify the files listed above. Resolve permissions in Drive or prepare to move those files manually.");
+          res.restricted.forEach(fileInfo => addLog(`   - RESTRICTED: ${fileInfo}`, 'log-warn'));
+          addInstruction("Identify files listed above. Resolve permissions or prepare to move manually.");
         } else {
           addLog("✅ All files cleared.");
-          addInstruction("Permissions verified. You are clear for takeoff. Click 'Execute Migration' to begin.");
+          addInstruction("Permissions verified. You are clear for takeoff.");
         }
-        document.getElementById('execBtn').disabled = false;
-        document.getElementById('execBtn').innerText = `Execute Migration (${res.ready.length} Ready)`;
+        toggleButton('analyzeBtn', false, "Permissions Analyzed");
+        
+        const execBtn = document.getElementById('execBtn');
+        execBtn.disabled = false;
+        execBtn.innerText = `Execute Migration (${res.ready.length} Ready)`;
         setStep(2, 'complete');
         setStep(3, 'active');
       }).checkPermissions(data);
     }
 
     async function startMigration() {
+      toggleButton('execBtn', true);
       const data = JSON.parse(document.getElementById('migrationJson').value);
       isRunning = true;
+      
       google.script.run.withSuccessHandler(async (processedIds) => {
         for (let i = 0; i < data.length; i++) {
           if (!isRunning) break;
@@ -139,11 +156,14 @@
         setStep(3, 'complete');
         setStep(4, 'active');
         addLog("✅ Migration Loop Finished.");
-        addInstruction("Execution phase complete. Click 'Finalize & Report' to generate your digital audit trail.");
+        addInstruction("Execution phase complete. Click 'Finalize & Report'.");
+        toggleButton('execBtn', false, "Migration Executed");
+        document.getElementById('execBtn').disabled = true; // Lock after success
       }).getProcessedIds(activeEngId);
     }
 
     function closeProject() {
+      toggleButton('closeBtn', true);
       google.script.run.withSuccessHandler(res => {
         addLog(res);
         setStep(4, 'complete');
@@ -152,17 +172,26 @@
         const check = document.getElementById('qcCheck');
         const btn = document.getElementById('decomBtn');
         check.disabled = false;
-        check.onchange = () => { btn.disabled = !check.checked; btn.className = check.checked ? 'btn btn-danger' : 'btn btn-disabled'; };
-        addInstruction("Report generated. Review 'reconciliation_summary.txt' in your logs folder. If satisfied, check the box below to trash the source shell.");
+        check.onchange = () => { 
+          btn.disabled = !check.checked; 
+          btn.style.background = check.checked ? '#d93025' : '#eee';
+          btn.style.color = check.checked ? 'white' : '#999';
+        };
+        addInstruction("Report generated in Logs -S. If satisfied, check the box below to trash the source shell.");
+        toggleButton('closeBtn', false, "Project Finalized");
+        document.getElementById('closeBtn').disabled = true; // Lock after success
       }).finalizeEngagement(activeEngId);
     }
 
     function decommission() {
+      toggleButton('decomBtn', true);
       addLog("Cleaning source...");
       google.script.run.withSuccessHandler(res => {
         addLog(res);
         setStep(5, 'complete');
-        addInstruction("Engagement Complete. The source shell has been trashed. Your digital workspace is now aligned.");
+        addInstruction("Engagement Complete. The source shell has been trashed.");
+        toggleButton('decomBtn', false, "Source Trashed");
+        document.getElementById('decomBtn').disabled = true;
       }).decommissionSource(activeEngId, document.getElementById('targetFolder').value);
     }
   </script>
