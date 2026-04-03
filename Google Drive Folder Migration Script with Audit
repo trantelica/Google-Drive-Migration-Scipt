@@ -184,4 +184,154 @@ function unlinkSource(folder) {
   while (files.hasNext()) { try { folder.removeFile(files.next()); } catch(e) {} }
   const subs = folder.getFolders();
   while (subs.hasNext()) { unlinkSource(subs.next()); }
+}      }
+      const subs = folder.getFolders();
+      while (subs.hasNext()) {
+        const s = subs.next();
+        walk(s, path + "/" + s.getName());
+      }
+    }
+    walk(target, target.getName());
+    
+    engagementFolder.createFile(`pre_migration_registry.csv`, csvHeader + csvData);
+    
+    return {
+      engagementId: engagementFolder.getId(),
+      destParentId: destParent.getId(),
+      name: engagementName,
+      fileCount: csvData.split('\n').length - 1,
+      status: "✅ Engagement Initialized."
+    };
+  } catch (e) { return "❌ Init Error: " + e.message; }
+}
+
+/** PHASE 2: PRE-FLIGHT PERMISSION CHECK */
+function checkPermissions(items) {
+  let report = { ready: [], restricted: [] };
+  const userEmail = Session.getActiveUser().getEmail();
+  
+  items.forEach(item => {
+    try {
+      const file = DriveApp.getFileById(item.id);
+      const access = file.getAccess(userEmail);
+      if (access === DriveApp.Permission.EDIT || access === DriveApp.Permission.OWNER) {
+        report.ready.push(item.name);
+      } else {
+        report.restricted.push(item.name + " (View Only)");
+      }
+    } catch (e) {
+      report.restricted.push(item.name + " (Inaccessible/Broken ID)");
+    }
+  });
+  return report;
+}
+
+/** PHASE 3: RESILIENT MIGRATION */
+function migrateSingleFile(item, engagementFolderId, destParentId) {
+  let attempts = 0;
+  const maxAttempts = 3;
+  while (attempts < maxAttempts) {
+    try {
+      const engagementFolder = DriveApp.getFolderById(engagementFolderId);
+      const root = DriveApp.getFolderById(destParentId);
+      const file = DriveApp.getFileById(item.id);
+      const preSize = file.getSize();
+      
+      file.setDescription(`--- MIGRATION LOG ---\nOriginal Path: ${item.origin}\nSize: ${preSize} bytes\nMigrated: ${new Date().toISOString()}`);
+      
+      let targetPath = item.newPath;
+      
+      // FIX 1: Strip filename from the path if the Gem accidentally included it
+      if (targetPath.endsWith("/" + item.name) || targetPath.endsWith(item.name)) {
+        targetPath = targetPath.substring(0, targetPath.lastIndexOf('/'));
+      }
+
+      // FIX 2: The "Smart Root" Collision Check (Prevents Double-Nesting)
+      // If the first folder in the JSON path matches the name of the destination root, strip it.
+      let pathParts = targetPath.split('/').filter(p => p.trim() !== ''); // Filter out empty strings
+      if (pathParts.length > 0 && pathParts[0] === root.getName()) {
+        pathParts.shift(); // Slices off the duplicate root name
+      }
+      targetPath = pathParts.join('/');
+
+      const isShared = (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0);
+      
+      // If targetPath is empty after trimming, drop it in the root. Otherwise, build the path.
+      const destFolder = targetPath ? navigateToPath(root, targetPath) : root;
+      destFolder.addFile(file);
+      
+      const postSize = file.getSize();
+      const status = (preSize === postSize) ? "SUCCESS" : "SIZE_MISMATCH";
+      
+      logAction(engagementFolder, { name: item.name, id: item.id, status: status, shared: isShared, target: targetPath, preSize: preSize, postSize: postSize });
+      return { status: status, name: item.name };
+    } catch (e) {
+      attempts++;
+      if (attempts < maxAttempts) { Utilities.sleep(Math.pow(2, attempts) * 1000); } 
+      else { return { status: "FAILED", name: item.name, message: e.message }; }
+    }
+  }
+}
+
+/** PHASE 4: CLOSE & REPORT */
+function finalizeEngagement(engagementFolderId) {
+  try {
+    const folder = DriveApp.getFolderById(engagementFolderId);
+    const logs = folder.getFilesByName("execution_action_log.csv");
+    if (!logs.hasNext()) return "❌ Error: No log found.";
+    const logData = logs.next().getBlob().getDataAsString();
+    const report = `ENGAGEMENT CLOSURE REPORT\nGenerated: ${new Date().toLocaleString()}\n---------------------------\n${logData}`;
+    folder.createFile("reconciliation_summary.txt", report);
+    return "✅ Project Closed. QC Report deposited.";
+  } catch (e) { return "❌ Closure Error: " + e.message; }
+}
+
+/** PHASE 5: DECOMMISSION */
+function decommissionSource(engagementFolderId, targetFolderId) {
+  try {
+    const targetFolder = DriveApp.getFolderById(extractId(targetFolderId));
+    unlinkSource(targetFolder);
+    targetFolder.setTrashed(true);
+    return `✅ Source folder [${targetFolder.getName()}] trashed successfully.`;
+  } catch (e) { return "❌ Decommission Error: " + e.message; }
+}
+
+function extractId(url) {
+  // This inherently strips ?usp=sharing and trailing slashes
+  const match = url.match(/[-\w]{25,}/);
+  return match ? match[0] : url;
+}
+
+function logAction(folder, data) {
+  const logName = "execution_action_log.csv";
+  const files = folder.getFilesByName(logName);
+  let logFile = files.hasNext() ? files.next() : folder.createFile(logName, "Timestamp,Name,ID,Status,Is_Shared,Target,Size_Match\n");
+  const entry = `${new Date().toISOString()},"${data.name}",${data.id},${data.status},${data.shared},"${data.target}",${data.preSize == data.postSize}\n`;
+  logFile.setContent(logFile.getBlob().getDataAsString() + entry);
+}
+
+function getOrCreateFolder(parent, name) {
+  const folders = parent.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : parent.createFolder(name);
+}
+
+function navigateToPath(root, path) {
+  return path.split('/').reduce((p, n) => getOrCreateFolder(p, n), root);
+}
+
+function getProcessedIds(engagementFolderId) {
+  try {
+    const folder = DriveApp.getFolderById(engagementFolderId);
+    const files = folder.getFilesByName("execution_action_log.csv");
+    if (!files.hasNext()) return [];
+    const content = files.next().getBlob().getDataAsString();
+    return content.split('\n').map(row => row.split(',')[2]);
+  } catch (e) { return []; }
+}
+
+function unlinkSource(folder) {
+  const files = folder.getFiles();
+  while (files.hasNext()) { try { folder.removeFile(files.next()); } catch(e) {} }
+  const subs = folder.getFolders();
+  while (subs.hasNext()) { unlinkSource(subs.next()); }
 }
