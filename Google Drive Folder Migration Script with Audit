@@ -131,6 +131,7 @@ function validatePlacement(targetFolder, isFile = false) {
 }
 
 function extractId(url) {
+  if (!url || typeof url !== 'string') return url; // Safety check
   const match = url.match(/[-\w]{25,}/);
   return match ? match[0] : url;
 }
@@ -151,77 +152,4 @@ function auditFolder(folder, path) {
   }
   walk(folder, path, 0);
   return results;
-}}
-
-// Checks if a file already exists in a specific folder to prevent duplicates
-function checkExistence(fileName, targetFolder) {
-  const existing = targetFolder.getFilesByName(fileName);
-  return existing.hasNext(); 
-}
-
-/**
- * SECTION 4: PHASE 3 - ATOMIC MIGRATION (Single-File)
- */
-function migrateSingleFile(item, engagementFolderId, destParentId) {
-  try {
-    const engagementFolder = DriveApp.getFolderById(engagementFolderId);
-    const root = DriveApp.getFolderById(destParentId);
-    const file = DriveApp.getFileById(item.id);
-    
-    let pathParts = item.newPath.split('/').filter(p => p.trim() !== '');
-    let destFolder = pathParts.reduce((p, n) => getOrCreateFolder(p, n), root);
-    
-    // Check for Duplicates before moving
-    if (checkExistence(item.name, destFolder)) {
-      return { status: "SKIPPED", name: item.name, message: "File already exists at destination." };
-    }
-
-    validatePlacement(destFolder, true);
-    destFolder.addFile(file);
-    
-    return { status: "SUCCESS", name: item.name };
-  } catch (e) {
-    return { status: "FAILED", name: item.name, message: e.message };
-  }
-}
-
-/**
- * SECTION 5: GOVERNANCE & HELPERS
- */
-function normalizeFolderName(name) {
-  return name.trim().replace(/\s*-\s*([NSX]|sub)$/i, " -$1");
-}
-
-function getOrCreateFolder(parent, name) {
-  const normalizedName = normalizeFolderName(name);
-  const folders = parent.getFoldersByName(normalizedName);
-  if (folders.hasNext()) return folders.next();
-  const newFolder = parent.createFolder(normalizedName);
-  validatePlacement(newFolder);
-  return newFolder;
-}
-
-function validatePlacement(targetFolder, isFile = false) {
-  const name = targetFolder.getName();
-  if (isFile && name.endsWith(" -N")) throw new Error("Cannot place files in -N folders.");
-}
-
-function extractId(url) {
-  const match = url.match(/[-\w]{25,}/);
-  return match ? match[0] : url;
-}
-
-function auditFolder(folder, path) {
-  let data = "";
-  const files = folder.getFiles();
-  while (files.hasNext()) {
-    const f = files.next();
-    data += `${f.getId()},"${f.getName().replace(/"/g, '""')}","${path}",${f.getSize()}\n`;
-  }
-  const subs = folder.getFolders();
-  while (subs.hasNext()) {
-    const s = subs.next();
-    data += auditFolder(s, path + "/" + s.getName());
-  }
-  return data;
 }
