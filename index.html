@@ -3,63 +3,48 @@
 <head>
   <base target="_top">
   <style>
+    /* Styles matching current Git state for professional consistency */
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background: #f0f2f5; color: #1c1e21; }
     .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; border-left: 6px solid #1a73e8; }
-    
     .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; }
     .step { text-align: center; flex: 1; color: #bcc0c4; font-size: 11px; font-weight: bold; }
     .step.active { color: #1a73e8; }
     .step.complete { color: #34a853; }
     .step-icon { width: 28px; height: 28px; line-height: 28px; border-radius: 50%; border: 2px solid #bcc0c4; margin: 0 auto 8px; background: white; }
-    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; transform: scale(1.1); }
-    .step.complete .step-icon { border-color: #34a853; background: #e6f4ea; }
-
-    h2 { color: #1a73e8; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-    label { font-size: 12px; font-weight: 700; color: #4b4f56; display: block; margin-bottom: 5px; }
     input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; }
-    
-    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; font-size: 13px; transition: 0.2s; }
+    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; transition: 0.2s; }
     .btn-primary { background: #1a73e8; color: white; }
     .btn-secondary { background: #f1f3f4; color: #1c1e21; border: 1px solid #ddd; }
-    .btn-danger { background: #d93025; color: white; }
-    .btn:disabled { background: #e0e0e0; color: #888; cursor: not-allowed; border: none; }
-    
-    #log { height: 250px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: 'Consolas', monospace; font-size: 13px; border-radius: 10px; }
-    .log-inst { color: #ffeb3b; font-weight: bold; border-left: 3px solid #ffeb3b; padding-left: 10px; margin: 10px 0; }
-    .log-warn { color: #ff9800; }
+    #log { height: 250px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: monospace; border-radius: 10px; }
+    .bulk-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 15px; }
+    .bulk-bar input { margin-bottom: 0; }
   </style>
 </head>
 <body>
 
   <div class="stepper">
     <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
-    <div class="step" id="s2"><div class="step-icon">2</div>ANALYZE</div>
-    <div class="step" id="s3"><div class="step-icon">3</div>EXECUTE</div>
-    <div class="step" id="s4"><div class="step-icon">4</div>QC</div>
-    <div class="step" id="s5"><div class="step-icon">5</div>CLEANUP</div>
+    <div class="step" id="s2"><div class="step-icon">2</div>EXECUTE</div>
+    <div class="step" id="s3"><div class="step-icon">3</div>QC</div>
   </div>
 
-  <div class="card">
+<div class="card">
     <h2>1. Engagement Setup</h2>
-    <label>Engagement Name</label><input id="projName" placeholder="e.g. Project Delta Cleanup">
-    <label>Source URL/ID</label><input id="targetFolder" placeholder="Paste link to messy source">
-    <label>Destination Parent URL/ID</label><input id="destParent" placeholder="Defaults to My Drive">
+    <input id="projName" placeholder="Engagement Name">
+    <input id="sourceId" placeholder="Source Folder ID/URL">
+    <input id="destId" placeholder="Destination Parent ID (Optional)">
     <button id="initBtn" onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
   </div>
 
-  <div class="card">
-    <h2>2. Execution Engine</h2>
-    <label>Approved Migration JSON</label>
-    <textarea id="migrationJson" rows="4" placeholder="Paste JSON block here..."></textarea>
-    <button id="analyzeBtn" onclick="analyzePermissions()" class="btn btn-secondary">Analyze Permissions</button>
-    <button id="execBtn" onclick="startMigration()" class="btn btn-primary" disabled>Execute Migration</button>
-    <button id="closeBtn" onclick="closeProject()" class="btn btn-secondary">Finalize & Report</button>
-  </div>
-
-  <div class="card" id="decomCard" style="opacity: 0.4;">
-    <h2>3. Source Decommissioning</h2>
-    <label><input type="checkbox" id="qcCheck" disabled> I have resolved all errors manually.</label>
-    <button id="decomBtn" onclick="decommission()" class="btn" disabled style="margin-top:15px; background: #eee; color: #999;">Trash Source Shell</button>
+  <div class="card" id="execPanel" style="display:none;"> <h2>2. Execution Engine</h2>
+    <div class="bulk-bar">
+      <form id="bulk-edit-form" style="display: flex; width: 100%; gap: 10px;">
+        <input type="text" id="path-input" placeholder="Global Path (e.g. Project -N/Work -S)">
+        <button type="button" class="btn btn-secondary" onclick="resetBulkEditBar()">Clear Path</button>
+      </form>
+    </div>
+    <textarea id="migrationJson" rows="4" placeholder="Paste single file migration JSON here..."></textarea>
+    <button id="execBtn" onclick="startMigration()" class="btn btn-primary">Execute Migration</button>
   </div>
 
   <div id="log"><b>SYSTEM READY. Awaiting Stage 1...</b></div>
@@ -67,132 +52,82 @@
   <script>
     let activeEngId = "";
     let activeDestId = "";
-    let isRunning = false;
 
-    function setStep(stepNum, status) { document.getElementById('s' + stepNum).className = 'step ' + status; }
-    
-    function addLog(msg, type = '') {
+    function addLog(msg, type = 'info') {
       const log = document.getElementById('log');
-      const classAttr = type ? ` class="${type}"` : '';
-      log.innerHTML += `<div${classAttr}>[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
+      const color = type === 'error' ? '#ff4d4d' : (type === 'success' ? '#4af626' : '#ffffff');
+      log.innerHTML += `<div style="color: ${color}">[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
       log.scrollTop = log.scrollHeight;
     }
 
-    function addInstruction(msg) {
-      const log = document.getElementById('log');
-      log.innerHTML += `<div class="log-inst">[NEXT STEP] ${msg}</div>`;
-      log.scrollTop = log.scrollHeight;
-    }
-
-    function toggleButton(btnId, isLoading, defaultText = "") {
-      const btn = document.getElementById(btnId);
-      if (isLoading) {
-        btn.dataset.text = btn.innerText;
-        btn.innerText = "⏳ Processing...";
-        btn.disabled = true;
-      } else {
-        btn.innerText = defaultText || btn.dataset.text;
-        btn.disabled = false;
-      }
+    function resetBulkEditBar() {
+      document.getElementById('path-input').value = "";
+      addLog("Bulk Edit Bar cleared.");
     }
 
     function initProject() {
-      toggleButton('initBtn', true);
-      setStep(1, 'active');
       const name = document.getElementById('projName').value;
-      addLog(`Initializing ${name}...`);
-      
-      google.script.run.withSuccessHandler(res => {
-        activeEngId = res.engagementId;
-        activeDestId = res.destParentId;
-        setStep(1, 'complete');
-        setStep(2, 'active');
-        addLog(res.status + " Scope: " + res.fileCount);
-        addInstruction("Copy the file scope from the log above. Go to the Drive Migration Architect Gem and provide this list to negotiate your design.");
-        toggleButton('initBtn', false, "Engagement Initialized");
-        document.getElementById('initBtn').disabled = true; // Lock after success
-      }).initializeEngagement(name, document.getElementById('targetFolder').value, document.getElementById('destParent').value);
+      const source = document.getElementById('sourceId').value;
+      const dest = document.getElementById('destId').value;
+
+      addLog("Initializing Stage 1: Auditing Source & Destination...", "info");
+
+      google.script.run
+        .withSuccessHandler(res => {
+          if (typeof res === 'string' && res.includes('❌')) {
+            addLog(res, "error");
+            return;
+          }
+          
+          addLog(`✅ Engagement Sync Complete: ${res.name}`, "success");
+          addLog(`Mode: ${res.auditMode} | Files Found: ${res.fileCount}`, "success");
+          
+          // Set the global IDs for use in Stage 2
+          activeEngId = res.engagementId;
+          activeDestId = res.destParentId;
+          
+          // Visual updates
+          document.getElementById('s1').classList.add('complete');
+          document.getElementById('s2').classList.add('active');
+          document.getElementById('execPanel').style.display = 'block';
+        })
+        .withFailureHandler(err => {
+          addLog("System Error: " + err.message, "error");
+        })
+        .initializeEngagement(name, source, dest);
     }
 
-    function analyzePermissions() {
-      toggleButton('analyzeBtn', true);
-      const data = JSON.parse(document.getElementById('migrationJson').value);
-      addLog("🔍 Analyzing permissions...");
-      
-      google.script.run.withSuccessHandler(res => {
-        if (res.restricted.length > 0) {
-          addLog(`⚠️ ALERT: ${res.restricted.length} files restricted.`, 'log-warn');
-          res.restricted.forEach(fileInfo => addLog(`   - RESTRICTED: ${fileInfo}`, 'log-warn'));
-          addInstruction("Identify files listed above. Resolve permissions or prepare to move manually.");
-        } else {
-          addLog("✅ All files cleared.");
-          addInstruction("Permissions verified. You are clear for takeoff.");
-        }
-        toggleButton('analyzeBtn', false, "Permissions Analyzed");
+    function startMigration() {
+      const jsonInput = document.getElementById('migrationJson').value;
+      const bulkPath = document.getElementById('path-input').value;
+      let data;
+
+      try {
+        data = JSON.parse(jsonInput);
+      } catch (e) {
+        addLog("❌ Invalid JSON format. Please check the Gem output.", "error");
+        return;
+      }
+
+      // Handle both single objects and arrays
+      const items = Array.isArray(data) ? data : [data];
+
+      items.forEach(item => {
+        // If a bulk path is provided, it overrides the JSON path
+        if (bulkPath) item.newPath = bulkPath;
+
+        addLog(`Migrating: ${item.name}...`);
         
-        const execBtn = document.getElementById('execBtn');
-        execBtn.disabled = false;
-        execBtn.innerText = `Execute Migration (${res.ready.length} Ready)`;
-        setStep(2, 'complete');
-        setStep(3, 'active');
-      }).checkPermissions(data);
-    }
-
-    async function startMigration() {
-      toggleButton('execBtn', true);
-      const data = JSON.parse(document.getElementById('migrationJson').value);
-      isRunning = true;
-      
-      google.script.run.withSuccessHandler(async (processedIds) => {
-        for (let i = 0; i < data.length; i++) {
-          if (!isRunning) break;
-          if (processedIds.includes(data[i].id)) continue;
-          await new Promise(r => google.script.run.withSuccessHandler(res => {
-            const statusType = res.status === 'FAILED' ? 'log-warn' : '';
-            addLog(`${res.status}: ${res.name}`, statusType);
-            r();
-          }).migrateSingleFile(data[i], activeEngId, activeDestId));
-        }
-        setStep(3, 'complete');
-        setStep(4, 'active');
-        addLog("✅ Migration Loop Finished.");
-        addInstruction("Execution phase complete. Click 'Finalize & Report'.");
-        toggleButton('execBtn', false, "Migration Executed");
-        document.getElementById('execBtn').disabled = true; // Lock after success
-      }).getProcessedIds(activeEngId);
-    }
-
-    function closeProject() {
-      toggleButton('closeBtn', true);
-      google.script.run.withSuccessHandler(res => {
-        addLog(res);
-        setStep(4, 'complete');
-        setStep(5, 'active');
-        document.getElementById('decomCard').style.opacity = "1";
-        const check = document.getElementById('qcCheck');
-        const btn = document.getElementById('decomBtn');
-        check.disabled = false;
-        check.onchange = () => { 
-          btn.disabled = !check.checked; 
-          btn.style.background = check.checked ? '#d93025' : '#eee';
-          btn.style.color = check.checked ? 'white' : '#999';
-        };
-        addInstruction("Report generated in Logs -S. If satisfied, check the box below to trash the source shell.");
-        toggleButton('closeBtn', false, "Project Finalized");
-        document.getElementById('closeBtn').disabled = true; // Lock after success
-      }).finalizeEngagement(activeEngId);
-    }
-
-    function decommission() {
-      toggleButton('decomBtn', true);
-      addLog("Cleaning source...");
-      google.script.run.withSuccessHandler(res => {
-        addLog(res);
-        setStep(5, 'complete');
-        addInstruction("Engagement Complete. The source shell has been trashed.");
-        toggleButton('decomBtn', false, "Source Trashed");
-        document.getElementById('decomBtn').disabled = true;
-      }).decommissionSource(activeEngId, document.getElementById('targetFolder').value);
+        google.script.run
+          .withSuccessHandler(res => {
+            const statusType = res.status === 'SUCCESS' ? 'success' : (res.status === 'SKIPPED' ? 'info' : 'error');
+            addLog(`${res.status}: ${res.name} ${res.message || ''}`, statusType);
+          })
+          .withFailureHandler(err => {
+            addLog(`Error moving ${item.name}: ${err.message}`, "error");
+          })
+          .migrateSingleFile(item, activeEngId, activeDestId);
+      });
     }
   </script>
 </body>
