@@ -5,108 +5,255 @@
   <style>
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background: #f0f2f5; color: #1c1e21; }
     .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; border-left: 6px solid #1a73e8; }
-    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; transition: 0.2s; }
+    
+    .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; }
+    .step { text-align: center; flex: 1; color: #bcc0c4; font-size: 11px; font-weight: bold; }
+    .step.active { color: #1a73e8; }
+    .step.complete { color: #34a853; }
+    .step-icon { width: 28px; height: 28px; line-height: 28px; border-radius: 50%; border: 2px solid #bcc0c4; margin: 0 auto 8px; background: white; }
+    .step.active .step-icon { border-color: #1a73e8; background: #e8f0fe; transform: scale(1.1); }
+    .step.complete .step-icon { border-color: #34a853; background: #e6f4ea; }
+
+    h2 { color: #1a73e8; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+    label { font-size: 12px; font-weight: 700; color: #4b4f56; display: block; margin-bottom: 5px; }
+    input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; }
+    
+    .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; font-size: 13px; transition: 0.2s; }
     .btn-primary { background: #1a73e8; color: white; }
     .btn-secondary { background: #f1f3f4; color: #1c1e21; border: 1px solid #ddd; }
-    input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; }
-    #log { height: 300px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: monospace; border-radius: 10px; border: 1px solid #333; }
-    .status-msg { margin-bottom: 5px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+    .btn-danger { background: #d93025; color: white; }
+    .btn:disabled { background: #e0e0e0; color: #888; cursor: not-allowed; border: none; }
+    
+    #log { height: 300px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: 'Consolas', monospace; font-size: 13px; border-radius: 10px; }
+    .log-inst { color: #ffeb3b; font-weight: bold; border-left: 3px solid #ffeb3b; padding-left: 10px; margin: 10px 0; }
+    .log-warn { color: #ff9800; }
   </style>
 </head>
 <body>
 
+  <div style="text-align: right; margin-bottom: 15px;">
+    <button onclick="resetApp()" class="btn btn-danger" style="padding: 8px 16px; font-size: 11px;">🔄 Reset Application</button>
+  </div>
+
+  <div class="stepper">
+    <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
+    <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
+    <div class="step" id="s2"><div class="step-icon">2</div>ANALYZE</div>
+    <div class="step" id="s3"><div class="step-icon">3</div>EXECUTE</div>
+    <div class="step" id="s4"><div class="step-icon">4</div>QC</div>
+    <div class="step" id="s5"><div class="step-icon">5</div>CLEANUP</div>
+  </div>
+
   <div class="card">
     <h2>1. Engagement Setup</h2>
-    <input id="projName" placeholder="Engagement Name (e.g., Q2 Audit)">
-    <input id="sourceId" placeholder="Source Folder ID/URL">
-    <input id="destId" placeholder="Destination Parent ID (Optional)">
-    <button onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
+    <label>Engagement Name</label><input id="projName" placeholder="e.g. Q2 Migration Cleanup">
+    <label>Source Folder URL/ID</label><input id="targetFolder" placeholder="Paste link to messy source">
+    <label>Destination Parent URL/ID</label><input id="destParent" placeholder="Defaults to My Drive">
+    <button id="initBtn" onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
   </div>
 
-  <div class="card" id="execPanel">
+  <div class="card">
     <h2>2. Execution Engine</h2>
-    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-      <input type="text" id="path-input" placeholder="Global Path Override (e.g., Legal -N/Contracts -S)">
-      <button class="btn btn-secondary" onclick="document.getElementById('path-input').value=''">Clear</button>
-    </div>
-    <textarea id="migrationJson" rows="8" placeholder="Paste JSON array from Gem here..."></textarea>
-    <button onclick="startMigration()" class="btn btn-primary">Execute Migration</button>
+    <label>Approved Migration JSON (From Architect Gem)</label>
+    <textarea id="migrationJson" rows="4" placeholder="Paste JSON block here..."></textarea>
+    <button id="analyzeBtn" onclick="analyzePermissions()" class="btn btn-secondary">Analyze Permissions</button>
+    <button id="execBtn" onclick="startMigration()" class="btn btn-primary" disabled>Execute Migration</button>
+    <button id="closeBtn" onclick="closeProject()" class="btn btn-secondary">Finalize & Report</button>
   </div>
 
-  <div id="log"><b>[SYSTEM] Ready. Awaiting Stage 1 initialization...</b></div>
+  <div class="card" id="decomCard" style="opacity: 0.4;">
+    <h2>3. Source Decommissioning</h2>
+    <label><input type="checkbox" id="qcCheck" disabled> I have verified the migration via the Reconciliation Report.</label>
+    <button id="decomBtn" onclick="decommission()" class="btn" disabled style="margin-top:15px; background: #eee; color: #999;">Trash Source Shell</button>
+  </div>
+
+  <div id="log"><b>SYSTEM READY. Awaiting Stage 1...</b></div>
 
   <script>
+<script>
     let activeEngId = "";
     let activeDestId = "";
+    let activeStartTime = ""; 
+    let isRunning = false;
 
-    function addLog(msg, type = 'info') {
+    function resetApp() {
+      // 1. Prompt the user for the conditional reset
+      const preserveDest = confirm("Do you want to preserve your Destination Parent (Anchor) URL for the next migration?\n\n[OK] = Keep Destination\n[Cancel] = Clear Everything");
+      
+      // 2. Stop any active loops
+      isRunning = false;
+
+      // 3. Reset Global Variables
+      activeEngId = "";
+      activeDestId = "";
+      activeStartTime = ""; 
+
+      // 4. Clear Input Fields (Conditionally keeping destParent)
+      document.getElementById('projName').value = '';
+      document.getElementById('targetFolder').value = '';
+      document.getElementById('migrationJson').value = '';
+      if (!preserveDest) {
+        document.getElementById('destParent').value = '';
+      }
+
+      // 5. Reset Stepper UI
+      for (let i = 1; i <= 5; i++) {
+        document.getElementById('s' + i).className = 'step';
+      }
+      setStep(1, 'active');
+
+      // 6. Reset Buttons & Checkboxes
+      document.getElementById('initBtn').disabled = false;
+      document.getElementById('initBtn').innerText = "Initialize Engagement";
+      
+      document.getElementById('execBtn').disabled = true;
+      document.getElementById('execBtn').innerText = "Execute Migration";
+      
+      document.getElementById('closeBtn').disabled = false;
+      document.getElementById('closeBtn').innerText = "Finalize & Report";
+      
+      document.getElementById('qcCheck').checked = false;
+      document.getElementById('qcCheck').disabled = true;
+      
+      const decomBtn = document.getElementById('decomBtn');
+      decomBtn.disabled = true;
+      decomBtn.style.background = '#eee';
+      decomBtn.style.color = '#999';
+      decomBtn.innerText = "Trash Source Shell";
+      
+      document.getElementById('decomCard').style.opacity = "0.4";
+
+      // 7. Reset Terminal Log
+      document.getElementById('log').innerHTML = '<b>SYSTEM READY. Awaiting Stage 1...</b>';
+    }
+
+    function setStep(stepNum, status) { document.getElementById('s' + stepNum).className = 'step ' + status; }
+    
+    function addLog(msg, type = '') {
       const log = document.getElementById('log');
-      const color = type === 'error' ? '#ff4d4d' : (type === 'success' ? '#4af626' : '#ffffff');
-      const time = new Date().toLocaleTimeString();
-      log.innerHTML += `<div class="status-msg" style="color: ${color}">[${time}] > ${msg}</div>`;
+      const classAttr = type ? ` class="${type}"` : '';
+      log.innerHTML += `<div${classAttr}>[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
       log.scrollTop = log.scrollHeight;
     }
 
-    function initProject() {
-      const name = document.getElementById('projName').value;
-      const source = document.getElementById('sourceId').value;
-      const dest = document.getElementById('destId').value;
-
-      addLog("Starting Stage 1: Auditing Source and Destination...", "info");
-
-      google.script.run
-        .withSuccessHandler(res => {
-          if (typeof res === 'string' && res.includes('❌')) {
-            addLog(res, "error");
-          } else {
-            addLog(`✅ Engagement Initialized: ${res.name}`, "success");
-            addLog(`Mode: ${res.auditMode} | Files Indexed: ${res.fileCount}`, "success");
-            
-            // Critical Handshake: Save IDs for Stage 2
-            activeEngId = res.engagementId;
-            activeDestId = res.destParentId;
-            
-            addLog("System ready for Stage 2 migration input.", "info");
-          }
-        })
-        .withFailureHandler(err => addLog("Apps Script Error: " + err.message, "error"))
-        .initializeEngagement(name, source, dest);
+    function addInstruction(msg) {
+      const log = document.getElementById('log');
+      log.innerHTML += `<div class="log-inst">[NEXT STEP] ${msg}</div>`;
+      log.scrollTop = log.scrollHeight;
     }
 
-    function startMigration() {
-      const jsonInput = document.getElementById('migrationJson').value;
-      const bulkPath = document.getElementById('path-input').value;
+    function toggleButton(btnId, isLoading, defaultText = "") {
+      const btn = document.getElementById(btnId);
+      if (isLoading) {
+        btn.dataset.text = btn.innerText;
+        btn.innerText = "⏳ Processing...";
+        btn.disabled = true;
+      } else {
+        btn.innerText = defaultText || btn.dataset.text;
+        btn.disabled = false;
+      }
+    }
+
+    function initProject() {
+      toggleButton('initBtn', true);
+      setStep(1, 'active');
+      const name = document.getElementById('projName').value;
+      addLog(`Initializing ${name}...`);
       
-      if (!jsonInput) {
-        addLog("❌ Error: No JSON data provided.", "error");
-        return;
-      }
+      google.script.run.withSuccessHandler(res => {
+        activeEngId = res.engagementId;
+        activeDestId = res.destParentId;
+        activeStartTime = res.startTime; 
+        setStep(1, 'complete');
+        setStep(2, 'active');
+        addLog(res.status); 
+        addInstruction("Open the 'Logs -S' folder in Drive. Provide the manifest/audit files to the Architect Gem to generate your JSON.");
+        toggleButton('initBtn', false, "Engagement Initialized");
+        document.getElementById('initBtn').disabled = true;
+      }).initializeEngagement(name, document.getElementById('targetFolder').value, document.getElementById('destParent').value);
+    }
 
-      let data;
-      try { 
-        data = JSON.parse(jsonInput); 
-      } catch (e) { 
-        addLog("❌ Error: Invalid JSON format. Please copy exactly from the Gem.", "error"); 
-        return; 
-      }
-
-      const items = Array.isArray(data) ? data : [data];
-      addLog(`Starting migration of ${items.length} file(s)...`, "info");
-
-      items.forEach(item => {
-        // Apply Bulk Override if present
-        if (bulkPath) item.newPath = bulkPath;
-
-        addLog(`Moving: ${item.name}...`);
+    function analyzePermissions() {
+      toggleButton('analyzeBtn', true);
+      const data = JSON.parse(document.getElementById('migrationJson').value);
+      addLog(`🔍 Analyzing ${data.length} files...`);
+      
+      google.script.run.withSuccessHandler(res => {
+        if (res.restricted.length > 0) {
+          addLog(`⚠️ ALERT: ${res.restricted.length} files restricted.`, 'log-warn');
+          res.restricted.forEach(f => addLog(` - ${f}`, 'log-warn'));
+        } else {
+          addLog("✅ All files cleared.");
+        }
+        toggleButton('analyzeBtn', false, "Permissions Analyzed");
         
-        google.script.run
-          .withSuccessHandler(res => {
-            const statusColor = res.status === 'SUCCESS' ? 'success' : (res.status === 'SKIPPED' ? 'info' : 'error');
-            addLog(`${res.status}: ${res.name} ${res.message || ''}`, statusColor);
-          })
-          .withFailureHandler(err => addLog(`Failed: ${item.name} - ${err.message}`, "error"))
-          .migrateSingleFile(item, activeEngId, activeDestId);
-      });
+        const execBtn = document.getElementById('execBtn');
+        execBtn.disabled = false;
+        execBtn.innerText = `Execute Migration (${res.ready.length} Ready)`;
+        setStep(2, 'complete');
+        setStep(3, 'active');
+      }).checkPermissions(data);
+    }
+
+    async function startMigration() {
+      toggleButton('execBtn', true);
+      const data = JSON.parse(document.getElementById('migrationJson').value);
+      isRunning = true;
+      
+google.script.run.withSuccessHandler(async (processedIds) => {
+        for (let i = 0; i < data.length; i++) {
+          if (!isRunning) break;
+          
+          // Normalize ID check for both old and new JSON schemas
+          const currentId = data[i].fileId || data[i].id;
+          if (processedIds.includes(currentId)) continue;
+          
+          await new Promise(r => google.script.run.withSuccessHandler(res => {
+            const statusType = (res.status === 'FAILED' || res.status === 'BLOCKED') ? 'log-warn' : '';
+            addLog(`${res.status}: ${res.name}`, statusType);
+            r();
+          }).migrateSingleFile(data[i], activeEngId, activeDestId));
+        }
+        setStep(3, 'complete');
+        setStep(4, 'active');
+        addLog("✅ Migration Loop Finished.");
+        addInstruction("Execution complete. Click 'Finalize & Report' for the closure summary.");
+        toggleButton('execBtn', false, "Migration Executed");
+        document.getElementById('execBtn').disabled = true;
+      }).getProcessedIds(activeEngId);
+    }
+
+    function closeProject() {
+      toggleButton('closeBtn', true);
+      google.script.run.withSuccessHandler(res => {
+        addLog(res.status);
+        addLog(res.details);
+        setStep(4, 'complete');
+        setStep(5, 'active');
+        document.getElementById('decomCard').style.opacity = "1";
+        const check = document.getElementById('qcCheck');
+        const btn = document.getElementById('decomBtn');
+        check.disabled = false;
+        check.onchange = () => { 
+          btn.disabled = !check.checked; 
+          btn.style.background = check.checked ? '#d93025' : '#eee';
+          btn.style.color = check.checked ? 'white' : '#999';
+        };
+        addInstruction("Review the 'reconciliation_summary.txt' in Drive. If satisfied, trash the source shell.");
+        toggleButton('closeBtn', false, "Project Finalized");
+        document.getElementById('closeBtn').disabled = true;
+      }).finalizeEngagement(activeEngId, activeStartTime);
+    }
+
+    function decommission() {
+      toggleButton('decomBtn', true);
+      addLog("Cleaning source...");
+      google.script.run.withSuccessHandler(res => {
+        addLog(res);
+        setStep(5, 'complete');
+        toggleButton('decomBtn', false, "Source Trashed");
+        document.getElementById('decomBtn').disabled = true;
+      }).decommissionSource(activeEngId, document.getElementById('targetFolder').value);
     }
   </script>
 </body>
