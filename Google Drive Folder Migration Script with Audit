@@ -1,179 +1,321 @@
-/**
- * SECTION 1: GLOBAL CONFIG & TRIGGERS
+/** * DRIVE MIGRATION ARCHITECT (v7.3 - Unified Architect)
+ * Focus: Full Intel Reporting, Folder Precision, and Detailed Telemetry.
  */
+
 const CONFIG = { 
   logsSubName: "Logs -S" 
 };
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
-      .setTitle('Migration Portal v6.12')
+      .setTitle('Migration Portal v7.3')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/**
- * SECTION 2: PHASE 1 - INITIALIZATION & STRATEGIC AUDIT
- */
+/** PHASE 1: INITIALIZE ENHANCED ENGAGEMENT (Restored Intel Reports) */
 function initializeEngagement(projectName, targetFolderId, destParentId) {
+  const startTime = new Date();
   try {
     const cleanTargetId = extractId(targetFolderId);
-    // Properly handle "root" alias vs actual ID
-    const cleanDestId = (destParentId && destParentId.trim() !== "") ? extractId(destParentId) : "root";
-    const destParent = (cleanDestId === "root") ? DriveApp.getRootFolder() : DriveApp.getFolderById(cleanDestId);
-    
+    const cleanDestId = destParentId ? extractId(destParentId) : "root";
     const date = new Date().toISOString().split('T')[0];
     const engagementName = `${date} - ${projectName}`;
     
-    // Create infrastructure
+    const destParent = cleanDestId === "root" ? DriveApp.getRootFolder() : DriveApp.getFolderById(cleanDestId);
     const logsSubRoot = getOrCreateFolder(destParent, CONFIG.logsSubName);
     const engagementFolder = getOrCreateFolder(logsSubRoot, engagementName);
     
-    // 1. Audit Source
-    const sourceFiles = auditFolder(DriveApp.getFolderById(cleanTargetId), "");
+    // 1. SOURCE REGISTRY & DATA MAPPING
+    const target = DriveApp.getFolderById(cleanTargetId);
+    let totalFiles = 0;
+    let totalBytes = 0;
+    let sourceData = "ID,Name,Path,Size\n";
+    let sourceMap = {}; 
     
-    // 2. Audit Destination (Includes safety to avoid auditing the new logs folder)
-    const destFiles = auditFolder(destParent, "");
+    function walkSource(folder, path) {
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const f = files.next();
+        const size = f.getSize();
+        const name = f.getName();
+        sourceData += `${f.getId()},"${name.replace(/"/g, '""')}","${path}",${size}\n`;
+        sourceMap[name + "|" + size] = path;
+        totalFiles++;
+        totalBytes += size;
+      }
+      const subs = folder.getFolders();
+      while (subs.hasNext()) {
+        const s = subs.next();
+        walkSource(s, path + "/" + s.getName());
+      }
+    }
+    walkSource(target, target.getName());
+    engagementFolder.createFile(`source_registry.csv`, sourceData);
 
-    // 3. Perform Resource-Aware Conflict Audit
-    const auditResult = performConflictAudit(sourceFiles.data, destFiles.data);
+// 2. DESTINATION INTELLIGENCE (Manifest, Registry, Folder Map, and Conflict Audit)
+    let destRegistry = "ID,Name,Path,Size\n";
+    let destFolderMap = "FolderID,FolderName,Path\n"; // NEW: Maps folders for the Gem
+    let destTree = ""; 
+    let conflicts = "Suspected Duplicates (Same Name + Size)\n----------------------------------\n";
 
-    // 4. Create Artifacts
-    engagementFolder.createFile(`source_registry.csv`, "ID,Name,Path,Size,Created\n" + sourceFiles.csv);
-    engagementFolder.createFile(`destination_manifest.txt`, destFiles.manifest);
-    engagementFolder.createFile(`destination_registry.csv`, "ID,Name,Path,Size,Created\n" + destFiles.csv);
-    engagementFolder.createFile(`conflict_audit_log.txt`, auditResult.log);
+    function walkDest(folder, depth, path) {
+      const prefix = " ".repeat(depth * 3) + "|-- ";
+      destTree += `${prefix}${folder.getName()} (ID: ${folder.getId()})\n`; // Added ID to tree
+      destFolderMap += `${folder.getId()},"${folder.getName().replace(/"/g, '""')}","${path}"\n`; // New Map
+      
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        const f = files.next();
+        const size = f.getSize();
+        const name = f.getName();
+        destRegistry += `${f.getId()},"${name.replace(/"/g, '""')}","${path}",${size}\n`;
+        
+        if (sourceMap[name + "|" + size]) {
+          conflicts += `! CONFLICT: "${name}" exists in Source (${sourceMap[name + "|" + size]}) and Destination (${path})\n`;
+        }
+      }
+      
+      const subs = folder.getFolders();
+      while (subs.hasNext()) {
+        const s = subs.next();
+        walkDest(s, depth + 1, path + "/" + s.getName());
+      }
+    }
+    walkDest(destParent, 0, destParent.getName());
+
+    engagementFolder.createFile(`destination_manifest.txt`, destTree);
+    engagementFolder.createFile(`destination_folder_map.csv`, destFolderMap); // NEW FILE
+    engagementFolder.createFile(`destination_registry.csv`, destRegistry);
+    engagementFolder.createFile(`conflict_audit_log.txt`, conflicts);
+    
+    const sizeStr = (totalBytes / (1024 * 1024)).toFixed(2) + " MB";
     
     return {
       engagementId: engagementFolder.getId(),
       destParentId: destParent.getId(),
       name: engagementName,
-      fileCount: sourceFiles.data.length,
-      auditMode: auditResult.mode,
-      logUrl: engagementFolder.getUrl(), // Added for UI feedback
-      status: `✅ Initialized. Mode: ${auditResult.mode}.`
+      status: `✅ Intel Generated. Found ${totalFiles} files (${sizeStr}). All 5 reports ready.`,
+      startTime: startTime.toISOString()
     };
-  } catch (e) { 
-    return "❌ Init Error: " + e.message; 
+  } catch (e) { return "❌ Init Error: " + e.message; }
+}
+
+function checkPermissions(items) {
+  let report = { ready: [], restricted: [] };
+  const userEmail = Session.getActiveUser().getEmail();
+  const batch = items.slice(0, 100); 
+  
+  batch.forEach(item => {
+    // Normalize JSON properties for both old and new schemas
+    const currentId = item.fileId || item.id;
+    const currentName = item.fileName || item.name;
+    
+    try {
+      const file = DriveApp.getFileById(currentId);
+      const access = file.getAccess(userEmail);
+      if (access === DriveApp.Permission.EDIT || access === DriveApp.Permission.OWNER) {
+        report.ready.push(currentName);
+      } else {
+        report.restricted.push(currentName + " (No Edit Access)");
+      }
+    } catch (e) {
+      report.restricted.push(currentName + " (Invalid ID/NotFound)");
+    }
+  });
+  return report;
+}
+
+/** PHASE 3: PRECISION MIGRATION */
+function migrateSingleFile(item, engagementFolderId, globalDestParentId) {
+  // Normalize JSON properties to handle both old and new schemas
+  const fileId = item.fileId || item.id;
+  const fileName = item.fileName || item.name;
+  const targetPath = item.relativePath || item.newPath || "";
+  
+  try {
+    const engagementFolder = DriveApp.getFolderById(engagementFolderId);
+    const file = DriveApp.getFileById(fileId);
+    
+    // Deterministic Anchoring
+    const anchorId = item.anchorId ? item.anchorId : globalDestParentId;
+    const anchorFolder = DriveApp.getFolderById(anchorId);
+    
+// Navigate starting FROM the anchor
+    const destFolder = navigateToPath(anchorFolder, targetPath, engagementFolder);
+    
+    // Rule: Files cannot live in -N folders. We check the final resolved destination.
+    if (destFolder.getName().includes("-N")) {
+      logAction(engagementFolder, { name: fileName, id: fileId, status: "BLOCKED: -N VIOLATION", target: destFolder.getName() });
+      return { status: "BLOCKED", name: fileName };
+    }
+    
+    destFolder.addFile(file);
+    logAction(engagementFolder, { name: fileName, id: fileId, status: "SUCCESS", target: targetPath || "Root Anchor" });
+    
+    return { status: "SUCCESS", name: fileName };
+  } catch (e) {
+    return { status: "FAILED", name: fileName, message: e.message };
   }
 }
 
-/**
- * SECTION 3: RECONCILIATION & CONFLICT ENGINE
- */
-function performConflictAudit(sourceList, destList) {
-  const complexity = sourceList.length * destList.length;
-  const threshold = 2000000; 
-  
-  if (complexity > threshold) {
-    return {
-      mode: "SCOPED",
-      log: "--- WARNING: RESOURCE LIMIT REACHED ---\nDestination size exceeds threshold for Global Deep Audit. Only local folder checks will occur.",
-      message: "Destination too large for deep audit."
-    };
-  }
+/** PHASE 4: FINAL TELEMETRY & REPORTING */
+function finalizeEngagement(engagementFolderId, startTimeStr) {
+  try {
+    const folder = DriveApp.getFolderById(engagementFolderId);
+    const actionLogFile = folder.getFilesByName("execution_action_log.csv");
+    if (!actionLogFile.hasNext()) return { status: "❌ No log found.", details: "" };
+    
+    const startTime = new Date(startTimeStr);
+    const endTime = new Date();
+    const duration = ((endTime - startTime) / 1000 / 60).toFixed(2);
+    
+    const rows = actionLogFile.next().getBlob().getDataAsString().split('\n').slice(1);
+    let migratedCount = 0;
+    let failedCount = 0;
+    let errorDetails = "";
+    let newFolders = []; // Array to hold newly created folders
 
-  let conflictLog = "--- GLOBAL DEEP CONFLICT AUDIT ---\n";
-  let foundCount = 0;
-
-  sourceList.forEach(s => {
-    destList.forEach(d => {
-      if (s.name === d.name) {
-        foundCount++;
-        const isIdentical = (s.size === d.size && Math.abs(s.created - d.created) < 5000);
-        const type = isIdentical ? "[IDENTICAL]" : "[VERSION_CONFLICT]";
-        conflictLog += `${type}: ${s.name}\n  - Source: ${s.path}\n  - Found at: ${d.path}\n`;
+    rows.forEach(row => {
+      const cols = row.split('|'); 
+      if (cols.length < 4) return;
+      
+      if (cols[3] === "SUCCESS") {
+        migratedCount++;
+      } else if (cols[3] === "FOLDER_CREATED") {
+        // Capture the folder name and its relative path
+        newFolders.push(`- ${cols[1]} (Relative Path: ${cols[4]})`);
+      } else {
+        failedCount++;
+        errorDetails += `${cols[1]} (${cols[3]})\n`;
       }
     });
-  });
 
-  return { mode: "GLOBAL", log: foundCount > 0 ? conflictLog : "No global conflicts detected." };
+    // Deduplicate the list (just in case) and format it for the text file
+    const uniqueFolders = [...new Set(newFolders)];
+    const folderReport = uniqueFolders.length > 0 ? uniqueFolders.join('\n') : "None";
+
+    const report = `ENGAGEMENT CLOSURE REPORT\n` +
+                   `--------------------------\n` +
+                   `Start: ${startTime.toLocaleString()}\n` +
+                   `Finish: ${endTime.toLocaleString()}\n` +
+                   `Duration: ${duration}m\n` +
+                   `Migrated: ${migratedCount}\n` +
+                   `Failed: ${failedCount}\n\n` +
+                   `NOVEL FOLDERS CREATED:\n${folderReport}\n\n` +
+                   `ISSUE LIST:\n${errorDetails || "None"}`;
+
+    folder.createFile("reconciliation_summary.txt", report);
+    
+    return {
+      status: "✅ Migration Complete.",
+      details: `Evaluated: ${rows.length - 1} | Migrated: ${migratedCount} | Duration: ${duration}m | Folders Built: ${uniqueFolders.length}`
+    };
+  } catch (e) { return "❌ Closure Error: " + e.message; }
 }
 
-/**
- * SECTION 4: PHASE 3 - ATOMIC MIGRATION
- */
-function migrateSingleFile(item, engagementFolderId, destParentId) {
+/** PHASE 5: DECOMMISSION SOURCE (Restored) */
+function decommissionSource(engagementFolderId, targetFolderId) {
   try {
-    const root = DriveApp.getFolderById(destParentId);
-    const file = DriveApp.getFileById(item.id);
+    // 1. Identify the source folder to be destroyed
+    const cleanTargetId = extractId(targetFolderId);
+    const targetFolder = DriveApp.getFolderById(cleanTargetId);
     
-    let pathParts = item.newPath.split('/').filter(p => p.trim() !== '');
-    // Ensure all folders in path exist
-    let destFolder = pathParts.reduce((p, n) => getOrCreateFolder(p, n), root);
+    // 2. Perform the recursive unlinking of any missed items
+    unlinkSource(targetFolder);
     
-    // Check for duplicate in the specific landing zone
-    const existing = destFolder.getFilesByName(item.name);
-    if (existing.hasNext()) {
-      return { status: "SKIPPED", name: item.name, message: "Duplicate in target folder." };
-    }
-
-    validatePlacement(destFolder, true);
-    destFolder.addFile(file);
+    // 3. Trash the root source folder
+    targetFolder.setTrashed(true);
     
-    return { status: "SUCCESS", name: item.name };
-  } catch (e) {
-    return { status: "FAILED", name: item.name, message: e.message };
+    return `✅ Source folder [${targetFolder.getName()}] trashed successfully. Migration cycle complete.`;
+  } catch (e) { 
+    return "❌ Decommission Error: " + e.message; 
   }
 }
 
-/**
- * SECTION 5: GOVERNANCE & UTILITIES
+/** GOVERNANCE HELPERS */
+
+/** * Navigates the folder tree. 
+ * Checks for existing folder names at each level to prevent duplicate hierarchies.
+ * Logs novel folder creations to the telemetry file.
  */
-function normalizeFolderName(name) {
-  return name.trim().replace(/\s*-\s*([NSX]|sub)$/i, " -$1");
+function navigateToPath(root, path, engagementFolder) {
+  const parts = path.split('/').filter(part => part.trim() !== "");
+  let currentFolder = root;
+  let trackedPath = "";
+
+  for (const folderName of parts) {
+    const name = folderName.trim();
+    trackedPath = trackedPath ? trackedPath + "/" + name : name;
+    const subFolders = currentFolder.getFoldersByName(name);
+    
+    if (subFolders.hasNext()) {
+      // An existing folder was found; use it instead of creating a new one.
+      currentFolder = subFolders.next();
+    } else {
+      // No folder exists, create it.
+      currentFolder = currentFolder.createFolder(name);
+      
+      // TELEMETRY: Log the creation of the novel folder
+      if (engagementFolder) {
+        logAction(engagementFolder, { 
+          name: name, 
+          id: currentFolder.getId(), 
+          status: "FOLDER_CREATED", 
+          target: trackedPath 
+        });
+      }
+    }
+  }
+  return currentFolder;
 }
 
-function getOrCreateFolder(parent, name) {
-  const normalizedName = normalizeFolderName(name);
-  const folders = parent.getFoldersByName(normalizedName);
-  if (folders.hasNext()) return folders.next();
-  const newFolder = parent.createFolder(normalizedName);
-  validatePlacement(newFolder);
-  return newFolder;
-}
-
-function validatePlacement(targetFolder, isFile = false) {
-  const name = targetFolder.getName();
-  if (isFile && name.endsWith(" -N")) throw new Error("Cannot place files in -N folders.");
+function sanitizeSuffix(folderName) {
+  if (!folderName) return "";
+  const name = folderName.trim();
+  
+  // Regex to check if it already ends in the correct pattern (e.g., " -N", " -S", " -sub")
+  const standardPattern = /\s-(N|S|sub|X)$/i;
+  
+  if (standardPattern.test(name)) {
+    // Already has a valid suffix, just return it (enforce casing)
+    return name.replace(/-SUB/i, "-sub").replace(/-n$/i, "-N").replace(/-s$/i, "-S").replace(/-x$/i, "-X");
+  }
+  
+  // If no suffix exists, this is technically a schema violation based on your rules,
+  // but we will return it as-is to avoid breaking the path.
+  return name;
 }
 
 function extractId(url) {
-  if (!url || typeof url !== 'string') return url;
   const match = url.match(/[-\w]{25,}/);
   return match ? match[0] : url;
 }
 
-function auditFolder(folder, path) {
-  let results = { csv: "", manifest: "", data: [] };
-  
-  function walk(currentFolder, currentPath, depth) {
-    const folderName = currentFolder.getName();
-    results.manifest += "  ".repeat(depth) + folderName + "\n";
-    
-    const files = currentFolder.getFiles();
-    while (files.hasNext()) {
-      const f = files.next();
-      const fData = { 
-        id: f.getId(), 
-        name: f.getName(), 
-        path: currentPath, 
-        size: f.getSize(), 
-        created: f.getDateCreated().getTime() 
-      };
-      results.data.push(fData);
-      results.csv += `${fData.id},"${fData.name.replace(/"/g, '""')}","${currentPath}",${fData.size},${fData.created}\n`;
-    }
-    
-    const subs = currentFolder.getFolders();
-    while (subs.hasNext()) {
-      const sub = subs.next(); // CORRECT: Single call to .next()
-      // Safety: Don't audit the logs folder we just created to avoid infinite loops
-      if (sub.getName() !== CONFIG.logsSubName) {
-        walk(sub, currentPath + "/" + sub.getName(), depth + 1);
-      }
-    }
-  }
-  
-  walk(folder, path, 0);
-  return results;
+function getOrCreateFolder(parent, name) {
+  const folders = parent.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : parent.createFolder(name);
+}
+
+function logAction(folder, data) {
+  const logName = "execution_action_log.csv";
+  const files = folder.getFilesByName(logName);
+  let logFile = files.hasNext() ? files.next() : folder.createFile(logName, "Timestamp|Name|ID|Status|Target\n");
+  const entry = `${new Date().toISOString()}|"${data.name}"|${data.id}|${data.status}|"${data.target}"\n`;
+  logFile.setContent(logFile.getBlob().getDataAsString() + entry);
+}
+
+function getProcessedIds(engagementFolderId) {
+  try {
+    const folder = DriveApp.getFolderById(engagementFolderId);
+    const files = folder.getFilesByName("execution_action_log.csv");
+    if (!files.hasNext()) return [];
+    return files.next().getBlob().getDataAsString().split('\n').map(row => row.split('|')[2]); // Updated delimiter
+  } catch (e) { return []; }
+}
+
+function unlinkSource(folder) {
+  const files = folder.getFiles();
+  while (files.hasNext()) { try { folder.removeFile(files.next()); } catch(e) {} }
+  const subs = folder.getFolders();
+  while (subs.hasNext()) { unlinkSource(subs.next()); }
 }
