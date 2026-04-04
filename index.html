@@ -37,7 +37,6 @@
 
   <div class="stepper">
     <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
-    <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
     <div class="step" id="s2"><div class="step-icon">2</div>ANALYZE</div>
     <div class="step" id="s3"><div class="step-icon">3</div>EXECUTE</div>
     <div class="step" id="s4"><div class="step-icon">4</div>QC</div>
@@ -199,7 +198,7 @@
       const data = JSON.parse(document.getElementById('migrationJson').value);
       isRunning = true;
       
-google.script.run.withSuccessHandler(async (processedIds) => {
+      google.script.run.withSuccessHandler(async (processedIds) => {
         for (let i = 0; i < data.length; i++) {
           if (!isRunning) break;
           
