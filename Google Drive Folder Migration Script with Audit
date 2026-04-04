@@ -1,44 +1,9 @@
 /**
- * UNIFIED MIGRATION FRAMEWORK (v6.12 - Schema Purist Edition)
- * Includes normalization for path reconciliation and strict governance rules.
+ * SECTION 1: GLOBAL CONFIG & TRIGGERS
  */
-
 const CONFIG = { 
-  logsSubName: "Logs -S" // Complies with standard taxonomy
+  logsSubName: "Logs -S" 
 };
-
-/**
- * GOVERNANCE: Normalizes folder names to strict "Name -Suffix" format.
- * Prevents duplicates caused by spacing anomalies.
- */
-function normalizeFolderName(name) {
-  if (!name) return "";
-  // Trims and ensures exactly one space before the hyphen for N, S, sub, or X
-  return name.trim().replace(/\s*-\s*([NSX]|sub)$/i, " -$1");
-}
-
-/**
- * GOVERNANCE: Enforces the Folder Model validation rules.
- */
-function validatePlacement(targetFolder, isFile = false) {
-  const folderName = targetFolder.getName();
-  
-  // Rule: Navigation Folders (-N) may NOT contain files.
-  if (isFile && folderName.endsWith(" -N")) {
-    throw new Error("Validation Error: Files cannot be placed in Navigation (-N) folders.");
-  }
-  
-  // Rule: Sub-folders (-sub) may only exist inside Source (-S) folders.
-  if (folderName.endsWith(" -sub")) {
-    const parent = targetFolder.getParents();
-    if (parent.hasNext()) {
-      const parentName = parent.next().getName();
-      if (!parentName.endsWith(" -S")) {
-        throw new Error("Validation Error: -sub folders must be contained within a Source (-S) folder.");
-      }
-    }
-  }
-}
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
@@ -46,7 +11,10 @@ function doGet() {
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-/** PHASE 1: INITIALIZE ENGAGEMENT */
+/**
+ * SECTION 2: PHASE 1 - INITIALIZATION & TARGET AWARENESS
+ * This is where we create the "Manifest" for the Gem.
+ */
 function initializeEngagement(projectName, targetFolderId, destParentId) {
   try {
     const cleanTargetId = extractId(targetFolderId);
@@ -56,106 +24,97 @@ function initializeEngagement(projectName, targetFolderId, destParentId) {
     const engagementName = `${date} - ${projectName}`;
     const destParent = cleanDestId === "root" ? DriveApp.getRootFolder() : DriveApp.getFolderById(cleanDestId);
     
-    // Use normalization for log folder creation
+    // 1. Setup Log Folders
     const logsSubRoot = getOrCreateFolder(destParent, CONFIG.logsSubName);
     const engagementFolder = getOrCreateFolder(logsSubRoot, engagementName);
     
+    // 2. Audit Source (Pre-Migration Registry)
     const target = DriveApp.getFolderById(cleanTargetId);
-    let csvHeader = "File ID,Name,Original_Path,Size_Bytes\n";
-    let csvData = "";
-
-    function walk(folder, path) {
-      const files = folder.getFiles();
-      while (files.hasNext()) {
-        const f = files.next();
-        csvData += `${f.getId()},"${f.getName().replace(/"/g, '""')}","${path}",${f.getSize()}\n`;
-      }
-      const subs = folder.getFolders();
-      while (subs.hasNext()) {
-        const s = subs.next();
-        walk(s, path + "/" + s.getName());
-      }
-    }
-    walk(target, target.getName());
+    let csvData = auditFolder(target, target.getName());
+    engagementFolder.createFile(`pre_migration_registry.csv`, "File ID,Name,Original_Path,Size_Bytes\n" + csvData);
     
-    engagementFolder.createFile(`pre_migration_registry.csv`, csvHeader + csvData);
+    // 3. NEW: Audit Destination (Target Manifest for the Gem)
+    const destinationManifest = getDestinationManifest(destParent);
+    engagementFolder.createFile(`target_structure_manifest.txt`, destinationManifest);
     
     return {
       engagementId: engagementFolder.getId(),
       destParentId: destParent.getId(),
       name: engagementName,
       fileCount: csvData.split('\n').length - 1,
-      status: "✅ Engagement Initialized."
+      status: "✅ Engagement Initialized. Target Manifest Created."
     };
   } catch (e) { return "❌ Init Error: " + e.message; }
 }
 
-/** PHASE 3: RESILIENT MIGRATION */
+/**
+ * SECTION 3: RECONCILIATION UTILITIES (The "Target Awareness" functions)
+ */
+
+// Crawls the destination to give the Gem context
+function getDestinationManifest(rootFolder) {
+  let manifest = "EXISTING DESTINATION STRUCTURE:\n";
+  function traverse(folder, depth) {
+    const indent = "  ".repeat(depth);
+    manifest += `${indent}${folder.getName()}\n`;
+    const subs = folder.getFolders();
+    while (subs.hasNext()) { traverse(subs.next(), depth + 1); }
+  }
+  traverse(rootFolder, 0);
+  return manifest;
+}
+
+// Checks if a file already exists in a specific folder to prevent duplicates
+function checkExistence(fileName, targetFolder) {
+  const existing = targetFolder.getFilesByName(fileName);
+  return existing.hasNext(); 
+}
+
+/**
+ * SECTION 4: PHASE 3 - ATOMIC MIGRATION (Single-File)
+ */
 function migrateSingleFile(item, engagementFolderId, destParentId) {
-  let attempts = 0;
-  const maxAttempts = 3;
-  while (attempts < maxAttempts) {
-    try {
-      const engagementFolder = DriveApp.getFolderById(engagementFolderId);
-      const root = DriveApp.getFolderById(destParentId);
-      const file = DriveApp.getFileById(item.id);
-      const preSize = file.getSize();
-      
-      file.setDescription(`--- MIGRATION LOG ---\nOriginal Path: ${item.origin}\nSize: ${preSize} bytes\nMigrated: ${new Date().toISOString()}`);
-      
-      let targetPath = item.newPath;
-      
-      // FIX 1: Strip filename if accidentally included
-      if (targetPath.endsWith("/" + item.name) || targetPath.endsWith(item.name)) {
-        targetPath = targetPath.substring(0, targetPath.lastIndexOf('/'));
-      }
-
-      // FIX 2: "Smart Root" Collision Check
-      let pathParts = targetPath.split('/').filter(p => p.trim() !== '');
-      if (pathParts.length > 0 && pathParts[0] === root.getName()) {
-        pathParts.shift();
-      }
-      targetPath = pathParts.join('/');
-
-      const isShared = (file.getSharingAccess() !== DriveApp.Access.PRIVATE || file.getEditors().length > 0);
-      const destFolder = targetPath ? navigateToPath(root, targetPath) : root;
-      
-      // Final Rule Validation before move
-      validatePlacement(destFolder, true);
-      
-      destFolder.addFile(file);
-      
-      const postSize = file.getSize();
-      const status = (preSize === postSize) ? "SUCCESS" : "SIZE_MISMATCH";
-      logAction(engagementFolder, { name: item.name, id: item.id, status: status, shared: isShared, target: targetPath, preSize: preSize, postSize: postSize });
-      return { status: status, name: item.name };
-    } catch (e) {
-      attempts++;
-      if (attempts < maxAttempts) { Utilities.sleep(Math.pow(2, attempts) * 1000); } 
-      else { return { status: "FAILED", name: item.name, message: e.message }; }
+  try {
+    const engagementFolder = DriveApp.getFolderById(engagementFolderId);
+    const root = DriveApp.getFolderById(destParentId);
+    const file = DriveApp.getFileById(item.id);
+    
+    let pathParts = item.newPath.split('/').filter(p => p.trim() !== '');
+    let destFolder = pathParts.reduce((p, n) => getOrCreateFolder(p, n), root);
+    
+    // Check for Duplicates before moving
+    if (checkExistence(item.name, destFolder)) {
+      return { status: "SKIPPED", name: item.name, message: "File already exists at destination." };
     }
+
+    validatePlacement(destFolder, true);
+    destFolder.addFile(file);
+    
+    return { status: "SUCCESS", name: item.name };
+  } catch (e) {
+    return { status: "FAILED", name: item.name, message: e.message };
   }
 }
 
-/** RECONCILIATION & NAVIGATION UTILITIES */
+/**
+ * SECTION 5: GOVERNANCE & HELPERS
+ */
+function normalizeFolderName(name) {
+  return name.trim().replace(/\s*-\s*([NSX]|sub)$/i, " -$1");
+}
+
 function getOrCreateFolder(parent, name) {
   const normalizedName = normalizeFolderName(name);
   const folders = parent.getFoldersByName(normalizedName);
-  
   if (folders.hasNext()) return folders.next();
-  
-  // Restriction: No -X folder creation currently allowed
-  if (normalizedName.endsWith(" -X")) {
-    throw new Error("Governance Restriction: -X folder creation is disabled.");
-  }
-  
   const newFolder = parent.createFolder(normalizedName);
   validatePlacement(newFolder);
   return newFolder;
 }
 
-function navigateToPath(root, path) {
-  return path.split('/').reduce((p, n) => getOrCreateFolder(p, n), root);
+function validatePlacement(targetFolder, isFile = false) {
+  const name = targetFolder.getName();
+  if (isFile && name.endsWith(" -N")) throw new Error("Cannot place files in -N folders.");
 }
 
 function extractId(url) {
@@ -163,22 +122,17 @@ function extractId(url) {
   return match ? match[0] : url;
 }
 
-function logAction(folder, data) {
-  const logName = "execution_action_log.csv";
-  const files = folder.getFilesByName(logName);
-  let logFile = files.hasNext() ? files.next() : folder.createFile(logName, "Timestamp,Name,ID,Status,Is_Shared,Target,Size_Match\n");
-  const entry = `${new Date().toISOString()},"${data.name}",${data.id},${data.status},${data.shared},"${data.target}",${data.preSize == data.postSize}\n`;
-  logFile.setContent(logFile.getBlob().getDataAsString() + entry);
-}
-
-function finalizeEngagement(engagementFolderId) {
-  try {
-    const folder = DriveApp.getFolderById(engagementFolderId);
-    const logs = folder.getFilesByName("execution_action_log.csv");
-    if (!logs.hasNext()) return "❌ Error: No log found.";
-    const logData = logs.next().getBlob().getDataAsString();
-    const report = `ENGAGEMENT CLOSURE REPORT\nGenerated: ${new Date().toLocaleString()}\n---------------------------\n${logData}`;
-    folder.createFile("reconciliation_summary.txt", report);
-    return "✅ Project Closed. QC Report deposited.";
-  } catch (e) { return "❌ Closure Error: " + e.message; }
+function auditFolder(folder, path) {
+  let data = "";
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const f = files.next();
+    data += `${f.getId()},"${f.getName().replace(/"/g, '""')}","${path}",${f.getSize()}\n`;
+  }
+  const subs = folder.getFolders();
+  while (subs.hasNext()) {
+    const s = subs.next();
+    data += auditFolder(s, path + "/" + s.getName());
+  }
+  return data;
 }
