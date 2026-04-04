@@ -3,51 +3,37 @@
 <head>
   <base target="_top">
   <style>
-    /* Styles matching current Git state for professional consistency */
     body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background: #f0f2f5; color: #1c1e21; }
     .card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; border-left: 6px solid #1a73e8; }
-    .stepper { display: flex; justify-content: space-between; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; }
-    .step { text-align: center; flex: 1; color: #bcc0c4; font-size: 11px; font-weight: bold; }
-    .step.active { color: #1a73e8; }
-    .step.complete { color: #34a853; }
-    .step-icon { width: 28px; height: 28px; line-height: 28px; border-radius: 50%; border: 2px solid #bcc0c4; margin: 0 auto 8px; background: white; }
-    input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; }
     .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px; transition: 0.2s; }
     .btn-primary { background: #1a73e8; color: white; }
     .btn-secondary { background: #f1f3f4; color: #1c1e21; border: 1px solid #ddd; }
-    #log { height: 250px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: monospace; border-radius: 10px; }
-    .bulk-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 15px; }
-    .bulk-bar input { margin-bottom: 0; }
+    input, textarea { width: 100%; padding: 12px; border: 1px solid #dddfe2; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; }
+    #log { height: 300px; overflow-y: auto; background: #1c1e21; color: #4af626; padding: 20px; font-family: monospace; border-radius: 10px; border: 1px solid #333; }
+    .status-msg { margin-bottom: 5px; border-bottom: 1px solid #333; padding-bottom: 2px; }
   </style>
 </head>
 <body>
 
-  <div class="stepper">
-    <div class="step" id="s1"><div class="step-icon">1</div>INIT</div>
-    <div class="step" id="s2"><div class="step-icon">2</div>EXECUTE</div>
-    <div class="step" id="s3"><div class="step-icon">3</div>QC</div>
-  </div>
-
-<div class="card">
+  <div class="card">
     <h2>1. Engagement Setup</h2>
-    <input id="projName" placeholder="Engagement Name">
+    <input id="projName" placeholder="Engagement Name (e.g., Q2 Audit)">
     <input id="sourceId" placeholder="Source Folder ID/URL">
     <input id="destId" placeholder="Destination Parent ID (Optional)">
-    <button id="initBtn" onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
+    <button onclick="initProject()" class="btn btn-primary">Initialize Engagement</button>
   </div>
 
-  <div class="card" id="execPanel" style="display:none;"> <h2>2. Execution Engine</h2>
-    <div class="bulk-bar">
-      <form id="bulk-edit-form" style="display: flex; width: 100%; gap: 10px;">
-        <input type="text" id="path-input" placeholder="Global Path (e.g. Project -N/Work -S)">
-        <button type="button" class="btn btn-secondary" onclick="resetBulkEditBar()">Clear Path</button>
-      </form>
+  <div class="card" id="execPanel">
+    <h2>2. Execution Engine</h2>
+    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+      <input type="text" id="path-input" placeholder="Global Path Override (e.g., Legal -N/Contracts -S)">
+      <button class="btn btn-secondary" onclick="document.getElementById('path-input').value=''">Clear</button>
     </div>
-    <textarea id="migrationJson" rows="4" placeholder="Paste single file migration JSON here..."></textarea>
-    <button id="execBtn" onclick="startMigration()" class="btn btn-primary">Execute Migration</button>
+    <textarea id="migrationJson" rows="8" placeholder="Paste JSON array from Gem here..."></textarea>
+    <button onclick="startMigration()" class="btn btn-primary">Execute Migration</button>
   </div>
 
-  <div id="log"><b>SYSTEM READY. Awaiting Stage 1...</b></div>
+  <div id="log"><b>[SYSTEM] Ready. Awaiting Stage 1 initialization...</b></div>
 
   <script>
     let activeEngId = "";
@@ -56,13 +42,9 @@
     function addLog(msg, type = 'info') {
       const log = document.getElementById('log');
       const color = type === 'error' ? '#ff4d4d' : (type === 'success' ? '#4af626' : '#ffffff');
-      log.innerHTML += `<div style="color: ${color}">[${new Date().toLocaleTimeString()}] > ${msg}</div>`;
+      const time = new Date().toLocaleTimeString();
+      log.innerHTML += `<div class="status-msg" style="color: ${color}">[${time}] > ${msg}</div>`;
       log.scrollTop = log.scrollHeight;
-    }
-
-    function resetBulkEditBar() {
-      document.getElementById('path-input').value = "";
-      addLog("Bulk Edit Bar cleared.");
     }
 
     function initProject() {
@@ -70,62 +52,59 @@
       const source = document.getElementById('sourceId').value;
       const dest = document.getElementById('destId').value;
 
-      addLog("Initializing Stage 1: Auditing Source & Destination...", "info");
+      addLog("Starting Stage 1: Auditing Source and Destination...", "info");
 
       google.script.run
         .withSuccessHandler(res => {
           if (typeof res === 'string' && res.includes('❌')) {
             addLog(res, "error");
-            return;
+          } else {
+            addLog(`✅ Engagement Initialized: ${res.name}`, "success");
+            addLog(`Mode: ${res.auditMode} | Files Indexed: ${res.fileCount}`, "success");
+            
+            // Critical Handshake: Save IDs for Stage 2
+            activeEngId = res.engagementId;
+            activeDestId = res.destParentId;
+            
+            addLog("System ready for Stage 2 migration input.", "info");
           }
-          
-          addLog(`✅ Engagement Sync Complete: ${res.name}`, "success");
-          addLog(`Mode: ${res.auditMode} | Files Found: ${res.fileCount}`, "success");
-          
-          // Set the global IDs for use in Stage 2
-          activeEngId = res.engagementId;
-          activeDestId = res.destParentId;
-          
-          // Visual updates
-          document.getElementById('s1').classList.add('complete');
-          document.getElementById('s2').classList.add('active');
-          document.getElementById('execPanel').style.display = 'block';
         })
-        .withFailureHandler(err => {
-          addLog("System Error: " + err.message, "error");
-        })
+        .withFailureHandler(err => addLog("Apps Script Error: " + err.message, "error"))
         .initializeEngagement(name, source, dest);
     }
 
     function startMigration() {
       const jsonInput = document.getElementById('migrationJson').value;
       const bulkPath = document.getElementById('path-input').value;
-      let data;
-
-      try {
-        data = JSON.parse(jsonInput);
-      } catch (e) {
-        addLog("❌ Invalid JSON format. Please check the Gem output.", "error");
+      
+      if (!jsonInput) {
+        addLog("❌ Error: No JSON data provided.", "error");
         return;
       }
 
-      // Handle both single objects and arrays
+      let data;
+      try { 
+        data = JSON.parse(jsonInput); 
+      } catch (e) { 
+        addLog("❌ Error: Invalid JSON format. Please copy exactly from the Gem.", "error"); 
+        return; 
+      }
+
       const items = Array.isArray(data) ? data : [data];
+      addLog(`Starting migration of ${items.length} file(s)...`, "info");
 
       items.forEach(item => {
-        // If a bulk path is provided, it overrides the JSON path
+        // Apply Bulk Override if present
         if (bulkPath) item.newPath = bulkPath;
 
-        addLog(`Migrating: ${item.name}...`);
+        addLog(`Moving: ${item.name}...`);
         
         google.script.run
           .withSuccessHandler(res => {
-            const statusType = res.status === 'SUCCESS' ? 'success' : (res.status === 'SKIPPED' ? 'info' : 'error');
-            addLog(`${res.status}: ${res.name} ${res.message || ''}`, statusType);
+            const statusColor = res.status === 'SUCCESS' ? 'success' : (res.status === 'SKIPPED' ? 'info' : 'error');
+            addLog(`${res.status}: ${res.name} ${res.message || ''}`, statusColor);
           })
-          .withFailureHandler(err => {
-            addLog(`Error moving ${item.name}: ${err.message}`, "error");
-          })
+          .withFailureHandler(err => addLog(`Failed: ${item.name} - ${err.message}`, "error"))
           .migrateSingleFile(item, activeEngId, activeDestId);
       });
     }
