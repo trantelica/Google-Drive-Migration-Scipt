@@ -17,26 +17,30 @@ function doGet() {
 function initializeEngagement(projectName, targetFolderId, destParentId) {
   try {
     const cleanTargetId = extractId(targetFolderId);
-    const cleanDestId = destParentId ? extractId(destParentId) : "root";
-    const destParent = DriveApp.getFolderById(cleanDestId);
+    // Properly handle "root" alias vs actual ID
+    const cleanDestId = (destParentId && destParentId.trim() !== "") ? extractId(destParentId) : "root";
+    const destParent = (cleanDestId === "root") ? DriveApp.getRootFolder() : DriveApp.getFolderById(cleanDestId);
     
     const date = new Date().toISOString().split('T')[0];
     const engagementName = `${date} - ${projectName}`;
     
+    // Create infrastructure
     const logsSubRoot = getOrCreateFolder(destParent, CONFIG.logsSubName);
     const engagementFolder = getOrCreateFolder(logsSubRoot, engagementName);
     
     // 1. Audit Source
     const sourceFiles = auditFolder(DriveApp.getFolderById(cleanTargetId), "");
-    engagementFolder.createFile(`source_registry.csv`, "ID,Name,Path,Size,Created\n" + sourceFiles.csv);
-
-    // 2. Audit Destination
+    
+    // 2. Audit Destination (Includes safety to avoid auditing the new logs folder)
     const destFiles = auditFolder(destParent, "");
-    engagementFolder.createFile(`destination_manifest.txt`, destFiles.manifest);
-    engagementFolder.createFile(`destination_registry.csv`, "ID,Name,Path,Size,Created\n" + destFiles.csv);
 
     // 3. Perform Resource-Aware Conflict Audit
     const auditResult = performConflictAudit(sourceFiles.data, destFiles.data);
+
+    // 4. Create Artifacts
+    engagementFolder.createFile(`source_registry.csv`, "ID,Name,Path,Size,Created\n" + sourceFiles.csv);
+    engagementFolder.createFile(`destination_manifest.txt`, destFiles.manifest);
+    engagementFolder.createFile(`destination_registry.csv`, "ID,Name,Path,Size,Created\n" + destFiles.csv);
     engagementFolder.createFile(`conflict_audit_log.txt`, auditResult.log);
     
     return {
@@ -45,9 +49,12 @@ function initializeEngagement(projectName, targetFolderId, destParentId) {
       name: engagementName,
       fileCount: sourceFiles.data.length,
       auditMode: auditResult.mode,
-      status: `✅ Initialized. Mode: ${auditResult.mode}. ${auditResult.message || ""}`
+      logUrl: engagementFolder.getUrl(), // Added for UI feedback
+      status: `✅ Initialized. Mode: ${auditResult.mode}.`
     };
-  } catch (e) { return "❌ Init Error: " + e.message; }
+  } catch (e) { 
+    return "❌ Init Error: " + e.message; 
+  }
 }
 
 /**
@@ -60,8 +67,8 @@ function performConflictAudit(sourceList, destList) {
   if (complexity > threshold) {
     return {
       mode: "SCOPED",
-      log: "--- WARNING: RESOURCE LIMIT REACHED ---\nDestination size exceeds threshold for Global Deep Audit.",
-      message: "Destination too large for deep audit; switched to scoped mode."
+      log: "--- WARNING: RESOURCE LIMIT REACHED ---\nDestination size exceeds threshold for Global Deep Audit. Only local folder checks will occur.",
+      message: "Destination too large for deep audit."
     };
   }
 
@@ -91,11 +98,13 @@ function migrateSingleFile(item, engagementFolderId, destParentId) {
     const file = DriveApp.getFileById(item.id);
     
     let pathParts = item.newPath.split('/').filter(p => p.trim() !== '');
+    // Ensure all folders in path exist
     let destFolder = pathParts.reduce((p, n) => getOrCreateFolder(p, n), root);
     
+    // Check for duplicate in the specific landing zone
     const existing = destFolder.getFilesByName(item.name);
     if (existing.hasNext()) {
-      return { status: "SKIPPED", name: item.name, message: "File already exists in this folder." };
+      return { status: "SKIPPED", name: item.name, message: "Duplicate in target folder." };
     }
 
     validatePlacement(destFolder, true);
@@ -136,18 +145,35 @@ function extractId(url) {
 
 function auditFolder(folder, path) {
   let results = { csv: "", manifest: "", data: [] };
+  
   function walk(currentFolder, currentPath, depth) {
-    results.manifest += "  ".repeat(depth) + currentFolder.getName() + "\n";
+    const folderName = currentFolder.getName();
+    results.manifest += "  ".repeat(depth) + folderName + "\n";
+    
     const files = currentFolder.getFiles();
     while (files.hasNext()) {
       const f = files.next();
-      const fData = { id: f.getId(), name: f.getName(), path: currentPath, size: f.getSize(), created: f.getDateCreated().getTime() };
+      const fData = { 
+        id: f.getId(), 
+        name: f.getName(), 
+        path: currentPath, 
+        size: f.getSize(), 
+        created: f.getDateCreated().getTime() 
+      };
       results.data.push(fData);
       results.csv += `${fData.id},"${fData.name.replace(/"/g, '""')}","${currentPath}",${fData.size},${fData.created}\n`;
     }
+    
     const subs = currentFolder.getFolders();
-    while (subs.hasNext()) { walk(subs.next(), currentPath + "/" + subs.next().getName(), depth + 1); }
+    while (subs.hasNext()) {
+      const sub = subs.next(); // CORRECT: Single call to .next()
+      // Safety: Don't audit the logs folder we just created to avoid infinite loops
+      if (sub.getName() !== CONFIG.logsSubName) {
+        walk(sub, currentPath + "/" + sub.getName(), depth + 1);
+      }
+    }
   }
+  
   walk(folder, path, 0);
   return results;
 }
