@@ -35,7 +35,7 @@ function initializeEngagement(projectName, targetFolderId, destParentId) {
     engagementFolder.createFile(`destination_manifest.txt`, destFiles.manifest);
     engagementFolder.createFile(`destination_registry.csv`, "ID,Name,Path,Size,Created\n" + destFiles.csv);
 
-    // 3. Perform Resource-Aware Conflict Audit (The "Deep Audit")
+    // 3. Perform Resource-Aware Conflict Audit
     const auditResult = performConflictAudit(sourceFiles.data, destFiles.data);
     engagementFolder.createFile(`conflict_audit_log.txt`, auditResult.log);
     
@@ -55,13 +55,12 @@ function initializeEngagement(projectName, targetFolderId, destParentId) {
  */
 function performConflictAudit(sourceList, destList) {
   const complexity = sourceList.length * destList.length;
-  const threshold = 2000000; // Limits comparisons to ensure script stability
+  const threshold = 2000000; 
   
   if (complexity > threshold) {
     return {
       mode: "SCOPED",
-      log: "--- WARNING: RESOURCE LIMIT REACHED ---\n" +
-           "Destination size exceeds threshold for Global Deep Audit. Cross-folder logic-gap duplicates will NOT be flagged pre-migration.",
+      log: "--- WARNING: RESOURCE LIMIT REACHED ---\nDestination size exceeds threshold for Global Deep Audit.",
       message: "Destination too large for deep audit; switched to scoped mode."
     };
   }
@@ -94,10 +93,9 @@ function migrateSingleFile(item, engagementFolderId, destParentId) {
     let pathParts = item.newPath.split('/').filter(p => p.trim() !== '');
     let destFolder = pathParts.reduce((p, n) => getOrCreateFolder(p, n), root);
     
-    // Just-in-Time Duplicate Check
     const existing = destFolder.getFilesByName(item.name);
     if (existing.hasNext()) {
-      return { status: "SKIPPED", name: item.name, message: "File already exists in this specific folder." };
+      return { status: "SKIPPED", name: item.name, message: "File already exists in this folder." };
     }
 
     validatePlacement(destFolder, true);
@@ -131,7 +129,7 @@ function validatePlacement(targetFolder, isFile = false) {
 }
 
 function extractId(url) {
-  if (!url || typeof url !== 'string') return url; // Safety check
+  if (!url || typeof url !== 'string') return url;
   const match = url.match(/[-\w]{25,}/);
   return match ? match[0] : url;
 }
